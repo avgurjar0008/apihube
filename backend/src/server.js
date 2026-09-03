@@ -13,8 +13,12 @@ app.use(cors({
     "http://localhost:5174",
     "http://localhost:5175",
     "https://apihube.vercel.app"
-  ]
-}));app.use(express.json({ limit: "1mb" }));
+  ],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
+}));
+
+app.use(express.json({ limit: "1mb" }));
 
 app.use("/api/health", healthRouter);
 app.use("/api/requests", requestRouter);
