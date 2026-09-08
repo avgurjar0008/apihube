@@ -68,7 +68,7 @@ export default function App() {
     setLoading(true); setError(""); setResponse(null);
     try {
       const finalUrl = buildUrl();
-      const r = await fetch("https://apihub-1cw1.onrender.com/api/requests/execute", {
+      const r = await fetch("https://apihub-1cyy.onrender.com/api/requests/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ method, url: finalUrl, headers: parseHeaders(headers), body })
