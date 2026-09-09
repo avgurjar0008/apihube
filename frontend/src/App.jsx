@@ -682,6 +682,108 @@ function Placeholder({ title, navigate }) {
     </main>
   );
 }
+function CreateAPI({ navigate }) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [type, setType] = useState("REST");
+
+  function saveAPI() {
+    if (!name.trim() || !baseUrl.trim()) {
+      alert("API Name and Base URL are required.");
+      return;
+    }
+
+    const apis = JSON.parse(
+      localStorage.getItem("apihub_apis") || "[]"
+    );
+
+    const api = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      description: description.trim(),
+      baseUrl: baseUrl.trim(),
+      type,
+      createdAt: new Date().toISOString()
+    };
+
+    localStorage.setItem(
+      "apihub_apis",
+      JSON.stringify([api, ...apis])
+    );
+
+    alert("API created successfully!");
+    navigate("APIs");
+  }
+
+  return (
+    <main className="pageWrap">
+      <div className="pageIntro">
+        <div>
+          <div className="eyebrow">API PROVIDER</div>
+          <h1>Create API</h1>
+          <p>Create and manage your own API.</p>
+        </div>
+
+        <button
+          className="secondaryBtn"
+          onClick={() => navigate("APIs")}
+        >
+          ← Back
+        </button>
+      </div>
+
+      <section className="createApiCard">
+
+        <div className="formGroup">
+          <label>API Name</label>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="e.g. Student API"
+          />
+        </div>
+
+        <div className="formGroup">
+          <label>Description</label>
+          <textarea
+            value={description}
+            onChange={e => setDescription(e.target.value)}
+            placeholder="Describe your API..."
+          />
+        </div>
+
+        <div className="formGroup">
+          <label>Base URL</label>
+          <input
+            value={baseUrl}
+            onChange={e => setBaseUrl(e.target.value)}
+            placeholder="https://example.com/api"
+          />
+        </div>
+
+        <div className="formGroup">
+          <label>API Type</label>
+          <select
+            value={type}
+            onChange={e => setType(e.target.value)}
+          >
+            <option value="REST">REST</option>
+            <option value="Testing">Testing</option>
+          </select>
+        </div>
+
+        <button
+          className="primaryBtn"
+          onClick={saveAPI}
+        >
+          Create API
+        </button>
+
+      </section>
+    </main>
+  );
+}
 function CreateEndpoint({ navigate }) {
   const [method, setMethod] = useState("GET");
   const [path, setPath] = useState("");
