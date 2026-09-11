@@ -1,4 +1,5 @@
 const ALLOWED = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
+const PRIVATE_HOST = /(^localhost$|^127\\.|^0\\.0\\.0\\.0$|^10\\.|^192\\.168\\.|^172\\.(1[6-9]|2\\d|3[0-1])\\.|^169\\.254\\.|^::1$|^fc|^fd)/i;
 
 function normalizeHeaders(headers = {}) {
   if (!headers || typeof headers !== "object" || Array.isArray(headers)) return {};
@@ -29,6 +30,7 @@ export async function executeRequest(payload = {}) {
   if (!["http:", "https:"].includes(parsed.protocol)) {
     throw new Error("Only HTTP and HTTPS URLs are supported.");
   }
+  if (PRIVATE_HOST.test(parsed.hostname)) throw new Error("Requests to local, private, and link-local network addresses are not allowed.");
 
   const headers = normalizeHeaders(payload.headers);
   const body = parseBody(payload.body);

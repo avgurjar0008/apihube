@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://apihube.vercel.app/sitemap.xml

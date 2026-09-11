@@ -1,0 +1,12 @@
+import { Router } from "express";
+import rateLimit from "express-rate-limit";
+import { apiCatalog, categories } from "../../../frontend/src/apiCatalog.js";
+import { requireApiKey } from "../middleware/auth.js";
+const router = Router();
+const safe = api => ({ id:api.id,name:api.name,description:api.description,category:api.category,baseUrl:api.baseUrl,authentication:api.authentication,reference:api.reference,testable:api.testable,endpoints:api.endpoints });
+router.use(requireApiKey, rateLimit({ windowMs:60000, limit:Number(process.env.API_RATE_LIMIT||60), keyGenerator:req=>req.apiKey.id, standardHeaders:true, legacyHeaders:false, message:{success:false,message:"API rate limit exceeded. Try again in a minute."} }));
+router.get("/categories",(req,res)=>res.json({success:true,data:categories.slice(1)}));
+router.get("/apis",(req,res)=>res.json({success:true,data:apiCatalog.map(safe)}));
+router.get("/apis/:id",(req,res)=>{const item=apiCatalog.find(x=>x.id===req.params.id);if(!item)return res.status(404).json({success:false,message:"API not found."});res.json({success:true,data:safe(item)});});
+router.get("/apis/:id/endpoints",(req,res)=>{const item=apiCatalog.find(x=>x.id===req.params.id);if(!item)return res.status(404).json({success:false,message:"API not found."});res.json({success:true,data:item.endpoints});});
+export default router;
