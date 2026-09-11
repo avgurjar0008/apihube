@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
-const NAV = ["Home", "APIs", "Tester", "Documentation", "Explore", "AI Assistant", "Learn"];
-
+const NAV = ["Home", "APIs", "Tester", "Documentation", "Explore", "AI Assistant", "Learn", "History"];
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
 const apiCatalog = [
   { name: "JSONPlaceholder", desc: "Free fake REST API for testing and prototyping.", tags: ["REST", "Testing"], status: "Public" },
   { name: "REST Countries", desc: "Get country, region, capital and flag data.", tags: ["Public", "JSON"], status: "Public" },
@@ -28,6 +28,7 @@ function Icon({ name }) {
 
 export default function App() {
   const [page, setPage] = useState("Home");
+  const [selectedApiId, setSelectedApiId] = useState(null);
   const [method, setMethod] = useState("GET");
   const [url, setUrl] = useState("https://jsonplaceholder.typicode.com/posts/1");
   const [headers, setHeaders] = useState("Content-Type: application/json");
@@ -38,6 +39,14 @@ export default function App() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState([]);
+  const [savedRequests, setSavedRequests] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("apihub_saved_requests") || "[]");
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
   const [aiOpen, setAiOpen] = useState(false);
   const [aiInput, setAiInput] = useState("");
   const [aiMessages, setAiMessages] = useState([
@@ -50,11 +59,73 @@ export default function App() {
     return typeof response.body === "string" ? response.body : JSON.stringify(response.body, null, 2);
   }, [response]);
 
-  function navigate(next) {
-    setPage(next);
-    setMobileOpen(false);
-    if (next === "AI Assistant") setAiOpen(true);
+  function navigate(next, data = null) {
+
+  setPage(next);
+
+  setMobileOpen(false);
+
+  if (next === "API Details" || next === "Create Endpoint") {
+    setSelectedApiId(data?.apiId ?? null);
   }
+
+  if (next === "AI Assistant") {
+    setAiOpen(true);
+  }
+
+  if (next === "Tester" && data) {
+    if (data.savedRequest) {
+      const request = data.savedRequest;
+      setMethod(request.method || "GET");
+      setUrl(request.url || "");
+      setHeaders(typeof request.headers === "string" ? request.headers : "");
+      setBody(typeof request.body === "string" ? request.body : "");
+      setParams(Array.isArray(request.params)
+        ? request.params.map(param => ({
+            key: String(param?.key || ""),
+            value: String(param?.value || ""),
+            enabled: param?.enabled !== false
+          }))
+        : []);
+      return;
+    }
+
+    setMethod(data.method || "GET");
+
+    const baseUrl = data.baseUrl || "";
+    const path = data.path || "";
+
+    setUrl(
+      baseUrl
+        ? `${baseUrl.replace(/\/$/, "")}/${path.replace(/^\//, "")}`
+        : path
+    );
+
+    if (data.parameters) {
+      const params = data.parameters
+        .split("\n")
+        .map(item => item.trim())
+        .filter(Boolean)
+        .map(item => {
+          const [key, ...valueParts] = item.split("=");
+          return {
+            key: key.trim(),
+            value: valueParts.join("=").trim(),
+            enabled: true
+          };
+        });
+
+      setParams(params);
+    } else {
+      setParams([]);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, "body")) {
+      setBody(data.body || "");
+    }
+  }
+
+}
 
   function buildUrl() {
     try {
@@ -68,7 +139,7 @@ export default function App() {
     setLoading(true); setError(""); setResponse(null);
     try {
       const finalUrl = buildUrl();
-      const r = await fetch("https://apihub-1cyy.onrender.com/api/requests/execute", {
+      const r = await fetch(`${API_BASE_URL}/api/requests/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ method, url: finalUrl, headers: parseHeaders(headers), body })
@@ -80,21 +151,33 @@ export default function App() {
     } catch (e) { setError(e.message || "Something went wrong."); }
     finally { setLoading(false); }
   }
-function saveRequest() {
-  const saved = JSON.parse(localStorage.getItem("apihub_saved_requests") || "[]");
-
-  saved.unshift({
+  function saveRequest() {
+  const saved = [{
     id: crypto.randomUUID(),
     method,
     url,
     headers,
     body,
     params
-  });
+  }, ...savedRequests];
 
   localStorage.setItem("apihub_saved_requests", JSON.stringify(saved));
+  setSavedRequests(saved);
   alert("Request saved successfully!");
 }
+  function openSavedRequest(request) {
+    navigate("Tester", { savedRequest: request });
+  }
+  function deleteSavedRequest(index) {
+    const updated = savedRequests.filter((_, requestIndex) => requestIndex !== index);
+    localStorage.setItem("apihub_saved_requests", JSON.stringify(updated));
+    setSavedRequests(updated);
+  }
+  function clearSavedRequests() {
+    if (!window.confirm("Clear all saved requests? This cannot be undone.")) return;
+    localStorage.removeItem("apihub_saved_requests");
+    setSavedRequests([]);
+  }
   function askAI(text = aiInput) {
     const q = text.trim(); if (!q) return;
     setAiMessages(m => [...m, { role: "user", text: q }, { role: "assistant", text: response ? `For this ${method} request, your API returned ${response.status}. I can help you inspect the response, improve the request, or explain what each part means.` : "Start by sending a request. Then I can explain the status code, response, headers and possible next steps." }]);
@@ -111,18 +194,23 @@ function saveRequest() {
     </header>
     {mobileOpen && <div className="mobileNav">{NAV.map(item => <button key={item} onClick={() => navigate(item)}>{item}</button>)}</div>}
 
-    {page === "Home" && <Home navigate={navigate} apiCatalog={apiCatalog}/>} 
-    {page === "Tester" && <Tester {...{method,setMethod,url,setUrl,headers,setHeaders,body,setBody,tab,setTab,response,error,loading,sendRequest,responseText,params,setParams,history,navigate,setAiOpen,saveRequest}}/>}
-    {page === "APIs" && <Apis navigate={navigate} catalog={apiCatalog}/>} 
-    {page.startsWith("API Details:") && <APIDetails navigate={navigate} />}
-    {page === "Create API" && <CreateAPI navigate={navigate}/>}
-    {page === "Sign In" && <SignIn navigate={navigate}/>}
-    {page === "Create Endpoint" && <CreateEndpoint navigate={navigate}/>}
-    {page === "Explore" && <Apis navigate={navigate} catalog={apiCatalog} explore/>}
-    {page === "Documentation" && <Documentation navigate={navigate}/>} 
-    {page === "Learn" && <Learn navigate={navigate}/>} 
-    {page === "AI Assistant" && <AssistantPage navigate={navigate} askAI={askAI} aiMessages={aiMessages} aiInput={aiInput} setAiInput={setAiInput}/>} 
-    {page !== "Home" && page !== "Tester" && page !== "APIs" && page !== "Explore" && page !== "Documentation" && page !== "Learn" && page !== "AI Assistant" && <Placeholder title={page} navigate={navigate}/>} 
+    {(() => {
+      switch (page) {
+        case "Home": return <Home navigate={navigate} apiCatalog={apiCatalog}/>;
+        case "Tester": return <Tester {...{method,setMethod,url,setUrl,headers,setHeaders,body,setBody,tab,setTab,response,error,loading,sendRequest,responseText,params,setParams,history,navigate,setAiOpen,saveRequest}}/>;
+        case "APIs": return <Apis navigate={navigate} catalog={apiCatalog}/>;
+        case "API Details": return <APIDetails navigate={navigate} apiId={selectedApiId}/>;
+        case "Create API": return <CreateAPI navigate={navigate}/>;
+        case "Sign In": return <SignIn navigate={navigate}/>;
+        case "Create Endpoint": return <CreateEndpoint navigate={navigate} apiId={selectedApiId}/>;
+        case "Explore": return <Apis navigate={navigate} catalog={apiCatalog} explore/>;
+        case "Documentation": return <Documentation navigate={navigate}/>;
+        case "Learn": return <Learn navigate={navigate}/>;
+        case "History": return <History savedRequests={savedRequests} onOpenRequest={openSavedRequest} onDeleteRequest={deleteSavedRequest} onClearRequests={clearSavedRequests}/>;
+        case "AI Assistant": return <AssistantPage navigate={navigate} askAI={askAI} aiMessages={aiMessages} aiInput={aiInput} setAiInput={setAiInput}/>;
+        default: return <Placeholder title={page} navigate={navigate}/>;
+      }
+    })()}
 
     {aiOpen && <aside className="aiPanel">
       <div className="aiPanelHead"><div><span className="eyebrow">APIHUB INTELLIGENCE</span><h3><Icon name="ai"/> API Assistant</h3></div><button className="close" onClick={() => setAiOpen(false)}>×</button></div>
@@ -256,7 +344,7 @@ function Apis({ navigate, catalog, explore = false }) {
                 <button
                   className="rowArrow"
                   onClick={() =>
-                    navigate(`API Details:${api.id}`)
+                    navigate("API Details", { apiId: api.id })
                   }
                 >
                   →
@@ -416,6 +504,44 @@ function SignIn({ navigate }) {
     </main>
   );
 }
+function History({ savedRequests, onOpenRequest, onDeleteRequest, onClearRequests }) {
+  return (
+    <main className="pageWrap">
+      <div className="pageIntro">
+        <div>
+          <div className="eyebrow">REQUEST HISTORY</div>
+          <h1>Saved Requests</h1>
+          <p>View the API requests you have saved in APIHub.</p>
+        </div>
+
+        {savedRequests.length > 0 && (
+          <button className="secondaryBtn" onClick={onClearRequests}>
+            Clear all
+          </button>
+        )}
+      </div>
+
+      <section className="createApiCard">
+        {savedRequests.length === 0 ? (
+          <p>No saved requests yet. Save a request from API Tester to rerun it here.</p>
+        ) : (
+          savedRequests.map((request, index) => (
+            <div key={request.id || `saved-request-${index}`} className="historyRow">
+              <strong>{request.method || "GET"}</strong>
+              <span>{request.url || "Untitled request"}</span>
+              <button className="secondaryBtn" onClick={() => onOpenRequest(request)}>
+                Open
+              </button>
+              <button className="secondaryBtn" onClick={() => onDeleteRequest(index)}>
+                Delete
+              </button>
+            </div>
+          ))
+        )}
+      </section>
+    </main>
+  );
+}
 function Learn({ navigate }) {
   return (
     <main className="pageWrap">
@@ -515,24 +641,18 @@ function AssistantPage({ navigate, askAI, aiMessages, aiInput, setAiInput }) {
     </main>
   );
 }
-function APIDetails({ navigate }) {
-  const apiId = window.location.hash
-    ? window.location.hash.split(":")[1]
-    : null;
-
+function APIDetails({ navigate, apiId }) {
   const apis = JSON.parse(
     localStorage.getItem("apihub_apis") || "[]"
   );
 
-  const api = apis.find(item => item.id === apiId) || apis[0];
+  const api = apis.find(item => item.id === apiId);
 
   const allEndpoints = JSON.parse(
     localStorage.getItem("apihub_endpoints") || "[]"
   );
 
-  const endpoints = allEndpoints.filter(
-    endpoint => !endpoint.apiId || endpoint.apiId === api?.id
-  );
+  const endpoints = allEndpoints.filter(endpoint => endpoint.apiId === api?.id);
 
   if (!api) {
     return (
@@ -617,7 +737,7 @@ function APIDetails({ navigate }) {
 
           <button
             className="primaryBtn"
-            onClick={() => navigate("Create Endpoint")}
+            onClick={() => navigate("Create Endpoint", { apiId: api.id })}
           >
             + Add Endpoint
           </button>
@@ -648,11 +768,19 @@ function APIDetails({ navigate }) {
               </span>
 
               <button
-                className="rowArrow"
-                onClick={() => navigate("Tester")}
-              >
-                →
-              </button>
+  className="rowArrow"
+  onClick={() =>
+    navigate("Tester", {
+      method: endpoint.method,
+      path: endpoint.path,
+      baseUrl: api.baseUrl,
+      parameters: endpoint.parameters,
+      body: endpoint.requestBody
+    })
+  }
+>
+  →
+</button>
             </div>
           ))
         )}
@@ -784,7 +912,7 @@ function CreateAPI({ navigate }) {
     </main>
   );
 }
-function CreateEndpoint({ navigate }) {
+function CreateEndpoint({ navigate, apiId }) {
   const [method, setMethod] = useState("GET");
   const [path, setPath] = useState("");
   const [name, setName] = useState("");
@@ -803,9 +931,20 @@ function CreateEndpoint({ navigate }) {
       localStorage.getItem("apihub_endpoints") || "[]"
     );
 
+    const apis = JSON.parse(
+      localStorage.getItem("apihub_apis") || "[]"
+    );
+    const parentApi = apis.find(api => api.id === apiId);
+
+    if (!parentApi) {
+      alert("Select a valid API before creating an endpoint.");
+      return;
+    }
+
     const endpoint = {
-      id: crypto.randomUUID(),
-      method,
+  id: crypto.randomUUID(),
+  apiId: parentApi.id,
+  method,
       path: path.trim(),
       name: name.trim(),
       description: description.trim(),
