@@ -6,3 +6,37 @@
 
 /* Phase 1 functional UI additions */
 .requiresBadge{font-size:9px;color:#f1bd7c;background:#9b6a1d22;padding:5px 8px;border-radius:999px}.apiCardActions{display:flex;gap:8px;margin-top:18px}.apiCardActions button{flex:1;border:1px solid #22354e;background:#0a1422;border-radius:8px;padding:9px;font-size:9px;color:#899ab1}.apiCardActions .cardPrimary{color:#dfe7f6;border-color:#334b6d}.apiCardActions button:disabled{cursor:not-allowed;opacity:.55}.filterBar{display:flex;gap:7px;flex-wrap:wrap;margin:0 0 18px}.filter{border:1px solid #22354e;background:#0a1422;color:#8293aa;padding:7px 10px;border-radius:999px;font-size:9px}.filter.active{background:#5366ef;color:#fff;border-color:#7183ff}.exploreToolbar{align-items:center}.exploreCount{color:#8293aa;font-size:10px;margin:-8px 0 18px}.emptyState{padding:35px;text-align:center;border:1px dashed #29405e;border-radius:12px;color:#8293aa}.emptyState .primaryBtn{margin-top:10px}.docCode{margin:24px 0}.contentNav{display:flex;justify-content:space-between;gap:10px}.contentNav button:disabled{opacity:.4;cursor:not-allowed}.footerLinks button,.footerBrandButton{border:0;background:none;color:inherit;font:inherit;padding:0;cursor:pointer}.footerBrandButton{display:flex;align-items:center;text-align:left}.accountCard{max-width:480px;margin:35px auto;padding:28px;background:#0a1422;border:1px solid var(--line);border-radius:14px}.accountCard h1{font-family:'Space Grotesk';font-size:40px;margin:10px 0}.accountCard>p{color:#8293aa;font-size:11px;line-height:1.7}.accountLinks{display:flex;justify-content:space-between;gap:12px;margin-top:20px}.successBox{padding:10px;border:1px solid #30755f;background:#1c8d6b22;color:#8be4c6;border-radius:8px;font-size:10px}.formGroup input,.formGroup select,.formGroup textarea{box-sizing:border-box}.docsSide{max-height:70vh;overflow:auto}.docsSide .textBtn{margin-bottom:8px}@media(max-width:700px){.accountLinks{flex-direction:column}.filterBar{max-height:132px;overflow:auto}.docsSide{max-height:none}.apiCardActions{flex-wrap:wrap}}
+.endpointTableRow{grid-template-columns:40px 1fr auto auto !important;cursor:pointer;border-radius:8px;transition:background .15s ease}
+.endpointTableRow:hover{background:rgba(111,124,255,.08)}
+.testEndpointBtn{font-size:9px !important;padding:7px 12px !important;white-space:nowrap}
+.parentApiBadge{font-size:9px;color:var(--cyan);background:#1a8b6922;border:1px solid #1c8d6b44;padding:3px 8px;border-radius:6px;margin-left:8px;font-weight:600;display:inline-block}
+
+/* Batch 4 Marketplace & Documentation Styles */
+.toastNotification{position:fixed;bottom:28px;right:28px;background:#0f1c2e;border:1px solid var(--cyan);color:var(--cyan);padding:12px 20px;border-radius:10px;font-weight:700;font-size:11px;z-index:99999;box-shadow:0 15px 40px rgba(0,0,0,.6);display:flex;align-items:center;gap:8px;animation:toastSlideUp .2s ease}
+@keyframes toastSlideUp{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}
+.gatewayUrlBar{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#060c15;border:1px solid #1f324b;border-radius:9px;padding:10px 14px;margin:14px 0;font-family:monospace;font-size:11px;color:#7ae5ce}
+.gatewayUrlBar code{color:#c5d8ee;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gatewayBadge{font-size:8px;font-weight:800;letter-spacing:.05em;color:#5fe0bc;background:rgba(95,224,188,.15);border:1px solid rgba(95,224,188,.3);padding:3px 8px;border-radius:5px;margin-left:8px}
+.detailTabs{display:flex;gap:12px;border-bottom:1px solid var(--line);margin:24px 0}
+.detailTab{background:none;border:0;color:var(--muted);font-size:12px;font-weight:700;padding:10px 16px 14px;border-bottom:2px solid transparent;cursor:pointer}
+.detailTab.active{color:#fff;border-color:var(--blue)}
+.codeSnippetWrap{background:#050b14;border:1px solid #1a2a40;border-radius:12px;margin:16px 0 24px;overflow:hidden}
+.snippetHeader{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;background:#0a1320;border-bottom:1px solid #162438}
+.langTabs{display:flex;gap:6px}
+.langTab{background:none;border:0;color:var(--muted);font-size:10px;font-weight:700;padding:6px 10px;border-radius:6px;cursor:pointer}
+.langTab.active{color:#fff;background:#17273d}
+.copySnippetBtn{border:1px solid #243852;background:#0f1c2d;color:#b5c7dc;border-radius:7px;padding:6px 12px;font-size:9px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+.copySnippetBtn:hover{background:#182b45;color:#fff}
+.snippetBody{padding:16px;margin:0;font:11px/1.7 monospace;color:#a3e1d6;white-space:pre-wrap;word-break:break-word;overflow-x:auto}
+.modalOverlay{position:fixed;inset:0;background:rgba(4,9,17,.78);backdrop-filter:blur(8px);z-index:10000;display:grid;place-items:center;padding:20px}
+.modalCard{width:min(540px,94vw);background:#0a1424;border:1px solid #233752;border-radius:16px;padding:28px;box-shadow:0 30px 90px rgba(0,0,0,.6);position:relative}
+.modalClose{position:absolute;top:18px;right:18px;background:none;border:0;color:var(--muted);font-size:22px;cursor:pointer}
+.errorRefTable{width:100%;border-collapse:collapse;margin:16px 0;font-size:10px}
+.errorRefTable th,.errorRefTable td{padding:10px 12px;border:1px solid #1c2e46;text-align:left}
+.errorRefTable th{background:#0c1828;color:#8da0b9}
+.errorRefTable code{color:#ff8296;font-weight:700}
+.marketplaceNavTabs{display:flex;gap:8px;margin-bottom:20px}
+.marketTabBtn{border:1px solid #20334c;background:#0a1320;color:#8496ad;border-radius:9px;padding:10px 18px;font-size:11px;font-weight:700;cursor:pointer}
+.marketTabBtn.active{background:linear-gradient(135deg,#6070ff,#475ceb);border-color:#6070ff;color:#fff}
+
+

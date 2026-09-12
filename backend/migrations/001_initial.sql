@@ -29,3 +29,17 @@ CREATE TABLE IF NOT EXISTS request_history (
   method TEXT NOT NULL, url TEXT NOT NULL, status INTEGER, response_time_ms INTEGER, created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS request_history_user_id_idx ON request_history(user_id);
+CREATE TABLE IF NOT EXISTS gateway_usage (
+  id UUID PRIMARY KEY,
+  api_key_id UUID NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  api_identifier TEXT NOT NULL,
+  method TEXT NOT NULL,
+  endpoint_path TEXT NOT NULL,
+  status_code INTEGER,
+  response_time_ms INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS gateway_usage_api_key_id_idx ON gateway_usage(api_key_id);
+CREATE INDEX IF NOT EXISTS gateway_usage_created_at_idx ON gateway_usage(created_at);
+

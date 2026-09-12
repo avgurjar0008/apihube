@@ -10,7 +10,9 @@ export function requireUser(req, res, next) {
   try { req.user = jwt.verify(token, secret()); next(); } catch { res.status(401).json({ success: false, message: "Authentication required." }); }
 }
 export async function requireApiKey(req, res, next) {
-  const raw = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+  const headerKey = req.headers["x-api-key"];
+  const bearerKey = req.headers.authorization?.replace(/^Bearer\s+/i, "");
+  const raw = String(headerKey || bearerKey || "").trim();
   if (!raw || !raw.startsWith("ah_")) return res.status(401).json({ success: false, message: "A valid APIHub API key is required." });
   const hash = crypto.createHash("sha256").update(raw).digest("hex");
   const result = await database().query("SELECT id, user_id FROM api_keys WHERE key_hash=$1 AND revoked_at IS NULL", [hash]);

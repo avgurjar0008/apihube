@@ -6,7 +6,10 @@ import healthRouter from "./routes/health.routes.js";
 import requestRouter from "./routes/request.routes.js";
 import authRouter from "./routes/auth.routes.js";
 import keysRouter from "./routes/keys.routes.js";
+import userApisRouter from "./routes/user-apis.routes.js";
+import userEndpointsRouter from "./routes/user-endpoints.routes.js";
 import libraryRouter from "./routes/library.routes.js";
+import gatewayRouter from "./routes/gateway.routes.js";
 import { requireDatabase } from "./db.js";
 
 const app = express();
@@ -16,7 +19,7 @@ app.use(cors({
   origin: true,
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"]
+  allowedHeaders: ["Content-Type", "Authorization", "X-API-Key"]
 }));
 
 app.use(express.json({ limit: "1mb" }));
@@ -26,6 +29,9 @@ app.use("/api/health", healthRouter);
 app.use("/api/requests", requestRouter);
 app.use("/api/auth", requireDatabase, authRouter);
 app.use("/api/api-keys", requireDatabase, keysRouter);
+app.use("/api/my-apis", requireDatabase, userApisRouter);
+app.use("/api/my-apis", requireDatabase, userEndpointsRouter);
+app.use("/api/gateway", requireDatabase, gatewayRouter);
 app.use("/api/v1", requireDatabase, libraryRouter);
 
 app.use((req, res) => res.status(404).json({ success: false, message: "Route not found" }));
