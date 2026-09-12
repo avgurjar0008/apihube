@@ -24,12 +24,7 @@ const origins = [
 ].filter(Boolean);
 
 app.use(cors({
-  origin(origin, callback) {
-    if (!origin || origins.includes(origin)) {
-      return callback(null, true);
-    }
-    callback(new Error("Origin not allowed by CORS."));
-  },
+  origin: origins,
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"]
