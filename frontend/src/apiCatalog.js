@@ -1,152 +1,729 @@
 const response = (shape) => JSON.stringify(shape, null, 2);
 
-function api(id, name, description, category, baseUrl, authentication, reference, endpoint, testable = false, tags = []) {
+function api(id, name, description, category, baseUrl, authentication, reference, endpoint, testable = false, tags = [], supportTypeOverride = null) {
   const [endpointName, method, path, parameters = "", exampleResponse = { ok: true }] = endpoint;
+  const supportType = supportTypeOverride || (testable ? "gateway_live" : (authentication && (authentication.toLowerCase().includes("key") || authentication.toLowerCase().includes("token") || authentication.toLowerCase().includes("credential")) ? "credential_required" : "catalog_reference"));
   return {
-    id, name, description, desc: description, category, baseUrl, authentication, auth: authentication, reference, testable,
-    tags: [category, ...tags], keywords: `${name} ${description} ${category}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean),
-    endpoints: [{ name: endpointName, method, path, parameters, body: "", exampleRequest: `${method} ${baseUrl}${path}`, example: response(exampleResponse) }]
+    id,
+    name,
+    description,
+    desc: description,
+    category,
+    baseUrl,
+    authentication,
+    auth: authentication,
+    reference,
+    testable,
+    supportType,
+    tags: [category, ...tags],
+    keywords: `${name} ${description} ${category} ${tags.join(" ")}`.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean),
+    endpoints: [
+      {
+        name: endpointName,
+        method,
+        path,
+        parameters,
+        body: "",
+        exampleRequest: `${method} ${baseUrl}${path}`,
+        example: response(exampleResponse)
+      }
+    ]
   };
 }
 
-// Each entry links to the provider's own documentation. Keyless examples are marked
-// testable; credentialed services remain documented without asking users for secrets.
 export const apiCatalog = [
-  // Testing
-  api("jsonplaceholder", "JSONPlaceholder", "Fake REST resources for prototypes and request testing.", "Testing", "https://jsonplaceholder.typicode.com", "None", "https://jsonplaceholder.typicode.com/guide/", ["Get a post", "GET", "/posts/1", "", { id: 1, title: "..." }], true, ["REST", "Mock"]),
-  api("httpbin", "httpbin", "HTTP request and response inspection service.", "Testing", "https://httpbin.org", "None", "https://httpbin.org/", ["Inspect a GET", "GET", "/get", "sample=apihub", { args: { sample: "apihub" } }], true, ["HTTP"]),
-  api("postman-echo", "Postman Echo", "Echo service for testing request methods and headers.", "Testing", "https://postman-echo.com", "None", "https://www.postman.com/postman/workspace/postman-public-workspace/documentation/12959542-4fa61a3c-6c8f-4c67-bf47-16c27b1e7db4", ["Echo a GET", "GET", "/get", "foo=bar", { args: { foo: "bar" } }], true, ["HTTP"]),
-  api("reqres", "ReqRes", "Hosted sample users and resources for frontend testing.", "Testing", "https://reqres.in", "API key required for requests", "https://reqres.in/", ["List users", "GET", "/api/users", "page=2", { page: 2, data: [] }], false, ["Mock"]),
-  api("dummyjson", "DummyJSON", "Sample products, users, carts and posts.", "Testing", "https://dummyjson.com", "None", "https://dummyjson.com/docs", ["Get a product", "GET", "/products/1", "", { id: 1, title: "iPhone 9" }], true, ["Mock"]),
-  api("beeceptor", "Beeceptor", "Configurable mock REST endpoints for development.", "Testing", "https://api.beeceptor.com", "Account or custom endpoint required", "https://beeceptor.com/docs/", ["List endpoints", "GET", "/api/endpoints", "", { endpoints: [] }], false, ["Mock"]),
+  // 1. Weather & Climate
+  api(
+    "open-meteo",
+    "Open-Meteo Weather",
+    "High-resolution global weather forecasts, temperature, and atmospheric conditions.",
+    "Weather & Climate",
+    "https://api.open-meteo.com/v1",
+    "None",
+    "https://open-meteo.com/en/docs",
+    ["Forecast", "GET", "/forecast", "latitude=28.6139\nlongitude=77.2090\ncurrent=temperature_2m", { current: { temperature_2m: 24.5 } }],
+    true,
+    ["Weather", "Climate", "Forecast"]
+  ),
+  api(
+    "met-no",
+    "MET Norway Locationforecast",
+    "Official Norwegian Meteorological Institute weather forecast and timeseries.",
+    "Weather & Climate",
+    "https://api.met.no/weatherapi/locationforecast/2.0",
+    "User-Agent identification required",
+    "https://api.met.no/weatherapi/locationforecast/2.0/documentation",
+    ["Compact forecast", "GET", "/compact", "lat=59.91\nlon=10.75", { properties: { timeseries: [] } }],
+    false,
+    ["Forecast", "Meteorology"]
+  ),
+  api(
+    "weatherapi",
+    "WeatherAPI.com",
+    "Current weather, 14-day forecast, air quality and astronomy data.",
+    "Weather & Climate",
+    "https://api.weatherapi.com/v1",
+    "Server-side key required",
+    "https://www.weatherapi.com/docs/",
+    ["Current conditions", "GET", "/current.json", "q=London", { location: { name: "London" }, current: { temp_c: 18 } }],
+    false,
+    ["Weather", "Provider"]
+  ),
 
-  // Public
-  api("dog-ceo", "Dog CEO", "Dog breed images and breed lists.", "Public", "https://dog.ceo/api", "None", "https://dog.ceo/dog-api/documentation/", ["Random dog image", "GET", "/breeds/image/random", "", { message: "https://images.dog.ceo/...", status: "success" }], true, ["Animals"]),
-  api("cat-facts", "Cat Facts", "Random cat facts in JSON.", "Public", "https://catfact.ninja", "None", "https://catfact.ninja/", ["Get a fact", "GET", "/fact", "", { fact: "Cats ...", length: 42 }], true, ["Animals"]),
-  api("agify", "Agify", "Estimates age from a first name.", "Public", "https://api.agify.io", "None", "https://agify.io/", ["Predict age", "GET", "/", "name=michael", { name: "michael", age: 69, count: 0 }], true, ["Data"]),
-  api("genderize", "Genderize", "Predicts likely gender from a first name.", "Public", "https://api.genderize.io", "None", "https://genderize.io/", ["Predict gender", "GET", "/", "name=alex", { name: "alex", gender: "male", probability: 0.5 }], true, ["Data"]),
-  api("nationalize", "Nationalize", "Predicts nationalities associated with a first name.", "Public", "https://api.nationalize.io", "None", "https://nationalize.io/", ["Predict nationality", "GET", "/", "name=maria", { name: "maria", country: [] }], true, ["Data"]),
-  api("bored", "Bored API", "Ideas for activities when you need inspiration.", "Public", "https://bored-api.appbrewery.com", "None", "https://bored-api.appbrewery.com/", ["Find activity", "GET", "/random", "", { activity: "Learn a new skill" }], true, ["Fun"]),
+  // 2. Finance, Stocks & Market Data
+  api(
+    "frankfurter-finance",
+    "Central Bank Market Data",
+    "Historical financial reference rates and central bank currency benchmarks.",
+    "Finance, Stocks & Market Data",
+    "https://api.frankfurter.dev/v1",
+    "None",
+    "https://frankfurter.dev/",
+    ["Market benchmarks", "GET", "/latest", "base=USD\nsymbols=EUR,GBP,INR", { base: "USD", rates: { EUR: 0.92, GBP: 0.78, INR: 86.5 } }],
+    true,
+    ["Markets", "Benchmark", "Finance"]
+  ),
+  api(
+    "alpha-vantage",
+    "Alpha Vantage Equities",
+    "Real-time and historical stock market quotes, forex and technical indicators.",
+    "Finance, Stocks & Market Data",
+    "https://www.alphavantage.co/query",
+    "Server-side key required",
+    "https://www.alphavantage.co/documentation/",
+    ["Daily stock data", "GET", "/", "function=TIME_SERIES_DAILY\nsymbol=IBM", { "Meta Data": { "2. Symbol": "IBM" } }],
+    false,
+    ["Stocks", "Equities", "WallStreet"]
+  ),
+  api(
+    "finnhub",
+    "Finnhub Market Data",
+    "Real-time institutional stock quotes, earnings, company fundamentals and news.",
+    "Finance, Stocks & Market Data",
+    "https://finnhub.io/api/v1",
+    "Server-side token required",
+    "https://finnhub.io/docs/api",
+    ["Stock quote", "GET", "/quote", "symbol=AAPL", { c: 230.5, d: 2.1, dp: 0.92 }],
+    false,
+    ["Stocks", "Market", "Quotes"]
+  ),
 
-  // Weather
-  api("open-meteo", "Open-Meteo", "Global weather forecasts and current conditions.", "Weather", "https://api.open-meteo.com/v1", "None", "https://open-meteo.com/en/docs", ["Forecast", "GET", "/forecast", "latitude=28.6139\nlongitude=77.2090\ncurrent=temperature_2m", { current: { temperature_2m: 0 } }], true, ["Forecast"]),
-  api("met-no", "MET Norway Locationforecast", "Weather forecasts from Norway's Meteorological Institute.", "Weather", "https://api.met.no/weatherapi/locationforecast/2.0", "User-Agent identification required", "https://api.met.no/weatherapi/locationforecast/2.0/documentation", ["Compact forecast", "GET", "/compact", "lat=59.91\nlon=10.75", { properties: { timeseries: [] } }], false, ["Forecast"]),
-  api("weatherapi", "WeatherAPI.com", "Current weather, forecasts and astronomy.", "Weather", "https://api.weatherapi.com/v1", "API key required", "https://www.weatherapi.com/docs/", ["Current conditions", "GET", "/current.json", "q=London", { location: {}, current: {} }], false, ["Forecast"]),
-  api("openweather", "OpenWeather", "Weather, forecast and geocoding services.", "Weather", "https://api.openweathermap.org/data/2.5", "API key required", "https://openweathermap.org/api", ["Current weather", "GET", "/weather", "q=Delhi", { weather: [], main: {} }], false, ["Forecast"]),
-  api("tomorrow", "Tomorrow.io", "Weather forecasts and timelines.", "Weather", "https://api.tomorrow.io/v4", "API key required", "https://docs.tomorrow.io/", ["Weather forecast", "GET", "/weather/forecast", "location=Delhi", { timelines: {} }], false, ["Forecast"]),
-  api("visual-crossing", "Visual Crossing Weather", "Historical and forecast weather data.", "Weather", "https://weather.visualcrossing.com/VisualCrossingWebServices/rest/services", "API key required", "https://www.visualcrossing.com/resources/documentation/weather-api/", ["Timeline weather", "GET", "/timeline/London", "", { days: [] }], false, ["Forecast"]),
+  // 3. News
+  api(
+    "hacker-news",
+    "Hacker News Live Feed",
+    "Official Firebase REST API for top tech stories, articles, and discussions.",
+    "News",
+    "https://hacker-news.firebaseio.com/v0",
+    "None",
+    "https://github.com/HackerNews/API",
+    ["Top tech stories", "GET", "/topstories.json", "print=pretty", [41000001, 41000002, 41000003]],
+    true,
+    ["Technology", "Headlines", "Articles"]
+  ),
+  api(
+    "newsapi",
+    "NewsAPI Global",
+    "Breaking news headlines and search articles from over 80,000 news sources.",
+    "News",
+    "https://newsapi.org/v2",
+    "Server-side key required",
+    "https://newsapi.org/docs",
+    ["Top headlines", "GET", "/top-headlines", "country=us", { status: "ok", totalResults: 38, articles: [] }],
+    false,
+    ["Journalism", "Breaking News"]
+  ),
+  api(
+    "guardian",
+    "The Guardian Open Platform",
+    "Access all Guardian content, sections, investigative reporting and tags.",
+    "News",
+    "https://content.guardianapis.com",
+    "Server-side key required",
+    "https://open-platform.theguardian.com/documentation/",
+    ["Search content", "GET", "/search", "q=technology", { response: { status: "ok", results: [] } }],
+    false,
+    ["News", "Journalism"]
+  ),
 
-  // Countries
-  api("rest-countries", "REST Countries", "Countries, capitals, flags, regions and populations.", "Countries", "https://restcountries.com/v3.1", "None", "https://restcountries.com/", ["Find a country", "GET", "/name/india", "", [{ name: { common: "India" } }]], true, ["Geography"]),
-  api("world-bank", "World Bank Indicators", "Global development indicators and country data.", "Countries", "https://api.worldbank.org/v2", "None", "https://datahelpdesk.worldbank.org/knowledgebase/articles/889392-about-the-indicators-api-documentation", ["Country data", "GET", "/country/IND", "format=json", [{ id: "IND", name: "India" }]], true, ["Economics"]),
-  api("countriesnow", "CountriesNow", "Country and city data including capitals and populations.", "Countries", "https://countriesnow.space/api/v0.1", "None", "https://countriesnow.space/", ["Countries and capitals", "GET", "/countries/capital", "", { error: false, data: [] }], true, ["Geography"]),
-  api("geonames", "GeoNames", "Geographical names and country information.", "Countries", "http://api.geonames.org", "Username required", "https://www.geonames.org/export/web-services.html", ["Country info", "GET", "/countryInfoJSON", "country=IN", { geonames: [] }], false, ["Geography"]),
-  api("nager-date", "Nager.Date", "Public holidays and country metadata.", "Countries", "https://date.nager.at/api/v3", "None", "https://date.nager.at/Api", ["Available countries", "GET", "/AvailableCountries", "", [{ countryCode: "IN", name: "India" }]], true, ["Holidays"]),
-  api("ipapi", "ipapi.co", "IP address geolocation and country lookup.", "Countries", "https://ipapi.co", "Rate limits apply", "https://ipapi.co/api/", ["Current IP country", "GET", "/json/", "", { country_name: "..." }], true, ["IP"]),
+  // 4. AI & Machine Learning
+  api(
+    "huggingface",
+    "Hugging Face Hub Models",
+    "Discover open-source AI models, transformers, datasets, and pipelines.",
+    "AI & Machine Learning",
+    "https://huggingface.co/api",
+    "None",
+    "https://huggingface.co/docs/hub/api",
+    ["List AI models", "GET", "/models", "limit=5", [{ id: "meta-llama/Llama-3.3-70B-Instruct" }, { id: "openai/whisper-large-v3" }]],
+    true,
+    ["AI", "LLM", "Models", "Transformers"]
+  ),
+  api(
+    "openai",
+    "OpenAI Models API",
+    "List and inspect available GPT, DALL-E, Whisper, and embedding models.",
+    "AI & Machine Learning",
+    "https://api.openai.com/v1",
+    "Server-side bearer token required",
+    "https://platform.openai.com/docs/api-reference",
+    ["List models", "GET", "/models", "", { object: "list", data: [{ id: "gpt-4o" }, { id: "o1" }] }],
+    false,
+    ["OpenAI", "GPT", "Generative AI"]
+  ),
+  api(
+    "gemini",
+    "Google Gemini AI",
+    "Next-generation multimodal reasoning and language generation models.",
+    "AI & Machine Learning",
+    "https://generativelanguage.googleapis.com/v1beta",
+    "Server-side key required",
+    "https://ai.google.dev/gemini-api/docs",
+    ["Generate content", "POST", "/models/gemini-2.0-flash:generateContent", "", { candidates: [{ content: { parts: [{ text: "Hello!" }] } }] }],
+    false,
+    ["Google", "Gemini", "Multimodal"]
+  ),
 
-  // Maps / Location
-  api("nominatim", "OpenStreetMap Nominatim", "Geocoding and place search using OpenStreetMap data.", "Maps / Location", "https://nominatim.openstreetmap.org", "User-Agent required by usage policy", "https://nominatim.org/release-docs/latest/api/Overview/", ["Search places", "GET", "/search", "q=New+Delhi\nformat=json", [{ display_name: "New Delhi, India" }]], false, ["Geocoding"]),
-  api("bigdatacloud", "BigDataCloud Reverse Geocode", "Reverse geocoding for coordinates.", "Maps / Location", "https://api.bigdatacloud.net/data", "Client key recommended", "https://www.bigdatacloud.com/docs/api/reverse-geocode-client", ["Reverse geocode", "GET", "/reverse-geocode-client", "latitude=28.6139\nlongitude=77.2090\nlocalityLanguage=en", { city: "New Delhi" }], true, ["Geocoding"]),
-  api("mapbox", "Mapbox Geocoding", "Forward and reverse geocoding and mapping services.", "Maps / Location", "https://api.mapbox.com/search/geocode/v6", "Access token required", "https://docs.mapbox.com/api/search/geocoding/", ["Forward geocode", "GET", "/forward", "q=Paris", { features: [] }], false, ["Geocoding"]),
-  api("google-maps", "Google Maps Platform", "Maps, routes, places and geocoding.", "Maps / Location", "https://maps.googleapis.com/maps/api", "API key and billing required", "https://developers.google.com/maps/documentation", ["Geocode address", "GET", "/geocode/json", "address=New+Delhi", { results: [], status: "OK" }], false, ["Geocoding"]),
-  api("here", "HERE Location Services", "Geocoding, routing and maps.", "Maps / Location", "https://geocode.search.hereapi.com/v1", "API key required", "https://developer.here.com/documentation", ["Geocode query", "GET", "/geocode", "q=Berlin", { items: [] }], false, ["Geocoding"]),
-  api("opencage", "OpenCage Geocoding", "Worldwide geocoding and reverse geocoding.", "Maps / Location", "https://api.opencagedata.com/geocode/v1", "API key required", "https://opencagedata.com/api", ["Geocode", "GET", "/json", "q=London", { results: [] }], false, ["Geocoding"]),
+  // 5. Maps & Geolocation
+  api(
+    "bigdatacloud",
+    "BigDataCloud Reverse Geocoding",
+    "Fast, accurate client-side reverse geocoding from latitude and longitude coordinates.",
+    "Maps & Geolocation",
+    "https://api.bigdatacloud.net/data",
+    "None",
+    "https://www.bigdatacloud.com/docs/api/reverse-geocode-client",
+    ["Reverse geocode", "GET", "/reverse-geocode-client", "latitude=28.6139\nlongitude=77.2090\nlocalityLanguage=en", { city: "New Delhi", countryName: "India" }],
+    true,
+    ["Geocoding", "Coordinates", "Maps"]
+  ),
+  api(
+    "ipapi",
+    "ipapi Geolocation",
+    "Instant IP address geolocation, ISP lookup, city, region and timezone detection.",
+    "Maps & Geolocation",
+    "https://ipapi.co",
+    "None",
+    "https://ipapi.co/api/",
+    ["Lookup IP", "GET", "/json/", "", { ip: "8.8.8.8", city: "Mountain View", country_name: "United States" }],
+    true,
+    ["IP", "Location", "Network"]
+  ),
+  api(
+    "nominatim",
+    "OpenStreetMap Nominatim",
+    "Open-source worldwide place search, geocoding and address lookup.",
+    "Maps & Geolocation",
+    "https://nominatim.openstreetmap.org",
+    "User-Agent required",
+    "https://nominatim.org/release-docs/latest/api/Overview/",
+    ["Search places", "GET", "/search", "q=London\nformat=json", [{ place_id: 1, display_name: "London, Greater London, England" }]],
+    true,
+    ["OpenStreetMap", "Addresses"]
+  ),
 
-  // Finance
-  api("frankfurter", "Frankfurter", "Foreign-exchange reference rates from central banks.", "Finance", "https://api.frankfurter.dev/v1", "None", "https://frankfurter.dev/", ["Latest rates", "GET", "/latest", "base=USD\nsymbols=INR", { base: "USD", rates: { INR: 0 } }], true, ["FX"]),
-  api("exchangerate-host", "ExchangeRate.host", "Currency conversion and exchange-rate data.", "Finance", "https://api.exchangerate.host", "API key required", "https://exchangerate.host/documentation", ["Latest rates", "GET", "/live", "source=USD", { quotes: {} }], false, ["FX"]),
-  api("alpha-vantage", "Alpha Vantage", "Stocks, forex, crypto and technical indicators.", "Finance", "https://www.alphavantage.co/query", "API key required", "https://www.alphavantage.co/documentation/", ["Daily stock data", "GET", "/", "function=TIME_SERIES_DAILY\nsymbol=IBM", { "Meta Data": {} }], false, ["Stocks"]),
-  api("finnhub", "Finnhub", "Market data, company fundamentals and news.", "Finance", "https://finnhub.io/api/v1", "API token required", "https://finnhub.io/docs/api", ["Quote", "GET", "/quote", "symbol=AAPL", { c: 0, d: 0 }], false, ["Stocks"]),
-  api("twelvedata", "Twelve Data", "Financial market and forex time series.", "Finance", "https://api.twelvedata.com", "API key required", "https://twelvedata.com/docs", ["Time series", "GET", "/time_series", "symbol=AAPL\ninterval=1day", { values: [] }], false, ["Stocks"]),
-  api("polygon", "Polygon.io", "Stocks, options, forex and crypto market data.", "Finance", "https://api.polygon.io", "API key required", "https://polygon.io/docs", ["Previous close", "GET", "/v2/aggs/ticker/AAPL/prev", "", { results: [] }], false, ["Stocks"]),
+  // 6. Countries & World Data
+  api(
+    "rest-countries",
+    "REST Countries",
+    "Comprehensive country data: capitals, population, borders, currencies, and languages.",
+    "Countries & World Data",
+    "https://restcountries.com/v3.1",
+    "None",
+    "https://restcountries.com/",
+    ["Find country", "GET", "/name/india", "", [{ name: { common: "India" }, capital: ["New Delhi"], population: 1400000000 }]],
+    true,
+    ["Geography", "Demographics", "Global"]
+  ),
+  api(
+    "world-bank",
+    "World Bank Global Indicators",
+    "Socio-economic indicators, GDP, trade, climate and poverty metrics for 200+ countries.",
+    "Countries & World Data",
+    "https://api.worldbank.org/v2",
+    "None",
+    "https://datahelpdesk.worldbank.org/knowledgebase/articles/889392-about-the-indicators-api-documentation",
+    ["Country indicators", "GET", "/country/IND", "format=json", [{ page: 1 }, [{ id: "IND", name: "India", region: { value: "South Asia" } }]]],
+    true,
+    ["Economics", "Indicators", "World Bank"]
+  ),
+  api(
+    "nager-date",
+    "Nager.Date Public Holidays",
+    "Worldwide public holidays, official country calendars and long weekends.",
+    "Countries & World Data",
+    "https://date.nager.at/api/v3",
+    "None",
+    "https://date.nager.at/Api",
+    ["Available countries", "GET", "/AvailableCountries", "", [{ countryCode: "US", name: "United States" }, { countryCode: "IN", name: "India" }]],
+    true,
+    ["Holidays", "Calendar"]
+  ),
 
-  // Crypto
-  api("coingecko", "CoinGecko", "Cryptocurrency prices, markets and metadata.", "Crypto", "https://api.coingecko.com/api/v3", "Demo/API key required", "https://docs.coingecko.com/", ["Simple price", "GET", "/simple/price", "ids=bitcoin\nvs_currencies=usd", { bitcoin: { usd: 0 } }], false, ["Markets"]),
-  api("coinbase", "Coinbase Exchange", "Public market data for Coinbase Exchange pairs.", "Crypto", "https://api.exchange.coinbase.com", "None for public endpoints", "https://docs.cdp.coinbase.com/exchange/reference/exchangerestapi_getproductticker", ["BTC-USD ticker", "GET", "/products/BTC-USD/ticker", "", { price: "0", product_id: "BTC-USD" }], true, ["Markets"]),
-  api("kraken", "Kraken REST API", "Public and private Kraken crypto exchange endpoints.", "Crypto", "https://api.kraken.com/0/public", "None for public endpoints", "https://docs.kraken.com/api/docs/rest-api/get-ticker-information/", ["Ticker", "GET", "/Ticker", "pair=XBTUSD", { error: [], result: {} }], true, ["Markets"]),
-  api("binance", "Binance Spot API", "Spot exchange market data and trading endpoints.", "Crypto", "https://api.binance.com/api/v3", "None for public market data", "https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints", ["Price ticker", "GET", "/ticker/price", "symbol=BTCUSDT", { symbol: "BTCUSDT", price: "0" }], true, ["Markets"]),
-  api("coinpaprika", "Coinpaprika", "Crypto assets, markets and exchange data.", "Crypto", "https://api.coinpaprika.com/v1", "None", "https://docs.coinpaprika.com/", ["List coins", "GET", "/coins", "", [{ id: "btc-bitcoin", name: "Bitcoin" }]], true, ["Markets"]),
-  api("blockchain-info", "Blockchain.com Charts", "Blockchain statistics and chart data.", "Crypto", "https://api.blockchain.info", "None", "https://www.blockchain.com/explorer/api/charts_api", ["Market price chart", "GET", "/charts/market-price", "timespan=30days\nformat=json", { values: [] }], true, ["Blockchain"]),
+  // 7. Sports
+  api(
+    "thesportsdb",
+    "TheSportsDB Sports Data",
+    "Sports leagues, team rosters, player profiles, stadiums, and event results.",
+    "Sports",
+    "https://www.thesportsdb.com/api/v1/json/3",
+    "None",
+    "https://www.thesportsdb.com/api.php",
+    ["Search team", "GET", "/searchteams.php", "t=Arsenal", { teams: [{ idTeam: "133604", strTeam: "Arsenal", strLeague: "English Premier League" }] }],
+    true,
+    ["Football", "Soccer", "Athletics"]
+  ),
+  api(
+    "f1",
+    "OpenF1 Motorsport Telemetry",
+    "Formula 1 official live timing, race sessions, drivers, lap times, and telemetry.",
+    "Sports",
+    "https://api.openf1.org/v1",
+    "None",
+    "https://openf1.org/",
+    ["List sessions", "GET", "/sessions", "year=2024", [{ session_name: "Race", country_name: "Monaco", year: 2024 }]],
+    true,
+    ["Racing", "Motorsport", "F1"]
+  ),
+  api(
+    "football-data",
+    "football-data.org",
+    "European football leagues, match fixtures, live scores, and tables.",
+    "Sports",
+    "https://api.football-data.org/v4",
+    "Server-side token required",
+    "https://www.football-data.org/documentation/quickstart",
+    ["Premier League", "GET", "/competitions/PL", "", { id: 2021, name: "Premier League" }],
+    false,
+    ["Soccer", "Leagues"]
+  ),
 
-  // News
-  api("newsapi", "NewsAPI", "Headlines and article search.", "News", "https://newsapi.org/v2", "API key required", "https://newsapi.org/docs", ["Top headlines", "GET", "/top-headlines", "country=us", { articles: [] }], false, ["Articles"]),
-  api("guardian", "The Guardian Open Platform", "Guardian content, tags and sections.", "News", "https://content.guardianapis.com", "API key required", "https://open-platform.theguardian.com/documentation/", ["Search content", "GET", "/search", "q=technology", { response: { results: [] } }], false, ["Articles"]),
-  api("nyt", "New York Times APIs", "NYT articles, books and popular stories.", "News", "https://api.nytimes.com/svc", "API key required", "https://developer.nytimes.com/docs", ["Most popular", "GET", "/mostpopular/v2/viewed/1.json", "", { results: [] }], false, ["Articles"]),
-  api("gnews", "GNews", "International news search and top headlines.", "News", "https://gnews.io/api/v4", "API token required", "https://gnews.io/docs/v4", ["Top headlines", "GET", "/top-headlines", "category=general", { articles: [] }], false, ["Articles"]),
-  api("mediastack", "Mediastack", "Live and historical news data.", "News", "https://api.mediastack.com/v1", "Access key required", "https://mediastack.com/documentation", ["Latest news", "GET", "/news", "countries=us", { data: [] }], false, ["Articles"]),
-  api("currents", "Currents API", "News search and latest headlines.", "News", "https://api.currentsapi.services/v1", "API key required", "https://currentsapi.services/en/docs/", ["Latest news", "GET", "/latest-news", "language=en", { news: [] }], false, ["Articles"]),
+  // 8. Movies & Entertainment
+  api(
+    "tvmaze",
+    "TVmaze Television Catalog",
+    "Television show schedule, cast information, episode guides, and streaming platforms.",
+    "Movies & Entertainment",
+    "https://api.tvmaze.com",
+    "None",
+    "https://www.tvmaze.com/api",
+    ["Search TV shows", "GET", "/search/shows", "q=office", [{ show: { id: 526, name: "The Office", rating: { average: 8.5 } } }]],
+    true,
+    ["Shows", "Television", "Streaming"]
+  ),
+  api(
+    "jikan",
+    "Jikan Anime Database",
+    "Open-source MyAnimeList REST API for anime series, manga, voice actors, and top rankings.",
+    "Movies & Entertainment",
+    "https://api.jikan.moe/v4",
+    "None",
+    "https://docs.api.jikan.moe/",
+    ["Top anime", "GET", "/top/anime", "", { data: [{ mal_id: 5114, title: "Fullmetal Alchemist: Brotherhood", score: 9.1 }] }],
+    true,
+    ["Anime", "Manga", "Animation"]
+  ),
+  api(
+    "rickmorty",
+    "Rick and Morty Universe",
+    "Explore characters, dimensions, planets, and episode lore from Rick and Morty.",
+    "Movies & Entertainment",
+    "https://rickandmortyapi.com/api",
+    "None",
+    "https://rickandmortyapi.com/documentation",
+    ["List characters", "GET", "/character", "", { info: { count: 826 }, results: [{ id: 1, name: "Rick Sanchez", species: "Human" }] }],
+    true,
+    ["Entertainment", "Animation", "Characters"]
+  ),
 
-  // Sports
-  api("thesportsdb", "TheSportsDB", "Sports leagues, teams, players and events.", "Sports", "https://www.thesportsdb.com/api/v1/json/3", "Free key 3 for sample endpoints", "https://www.thesportsdb.com/api.php", ["Search team", "GET", "/searchteams.php", "t=Arsenal", { teams: [] }], true, ["Teams"]),
-  api("football-data", "football-data.org", "Football competitions, teams and matches.", "Sports", "https://api.football-data.org/v4", "API token required", "https://www.football-data.org/documentation/quickstart", ["Premier League", "GET", "/competitions/PL", "", { id: 2021, name: "Premier League" }], false, ["Football"]),
-  api("api-football", "API-Football", "Fixtures, standings and statistics for football.", "Sports", "https://v3.football.api-sports.io", "API key required", "https://www.api-football.com/documentation-v3", ["Leagues", "GET", "/leagues", "", { response: [] }], false, ["Football"]),
-  api("balldontlie", "balldontlie NBA", "NBA players, teams, games and statistics.", "Sports", "https://api.balldontlie.io/v1", "API key required", "https://docs.balldontlie.io/", ["List teams", "GET", "/teams", "", { data: [] }], false, ["Basketball"]),
-  api("nflverse", "nflverse Data", "Open NFL play-by-play and season datasets.", "Sports", "https://github.com/nflverse/nflverse-data/releases/download", "None", "https://nflverse.nflverse.com/", ["Season roster CSV", "GET", "/rosters/roster_2024.csv", "", { format: "CSV" }], true, ["NFL", "Data"]),
-  api("f1", "OpenF1", "Formula 1 live timing, sessions and telemetry.", "Sports", "https://api.openf1.org/v1", "None", "https://openf1.org/", ["List sessions", "GET", "/sessions", "year=2024", [{ session_name: "Race" }]], true, ["Motorsport"]),
+  // 9. GitHub & Developer Tools
+  api(
+    "github",
+    "GitHub Public REST API",
+    "Repositories, organizations, public gists, commit history, and developer profiles.",
+    "GitHub & Developer Tools",
+    "https://api.github.com",
+    "None",
+    "https://docs.github.com/en/rest",
+    ["Get user profile", "GET", "/users/octocat", "", { login: "octocat", id: 583231, public_repos: 8 }],
+    true,
+    ["Git", "Developer", "Code"]
+  ),
+  api(
+    "npm-registry",
+    "npm Package Registry",
+    "JavaScript package metadata, dependencies, download metrics, and versions.",
+    "GitHub & Developer Tools",
+    "https://registry.npmjs.org",
+    "None",
+    "https://github.com/npm/registry/blob/main/docs/REGISTRY-API.md",
+    ["Package details", "GET", "/react", "", { name: "react", "dist-tags": { latest: "19.0.0" } }],
+    true,
+    ["Node", "Packages", "JavaScript"]
+  ),
+  api(
+    "httpbin",
+    "httpbin Request Inspector",
+    "Developer HTTP request, response, status code, and header testing sandbox.",
+    "GitHub & Developer Tools",
+    "https://httpbin.org",
+    "None",
+    "https://httpbin.org/",
+    ["Inspect GET", "GET", "/get", "sample=apihub", { args: { sample: "apihub" }, headers: { Host: "httpbin.org" } }],
+    true,
+    ["HTTP", "Testing", "Tools"]
+  ),
+  api(
+    "gitlab",
+    "GitLab Public REST",
+    "GitLab open source projects, issues, merge requests, and pipelines.",
+    "GitHub & Developer Tools",
+    "https://gitlab.com/api/v4",
+    "None",
+    "https://docs.gitlab.com/api/rest/",
+    ["Public projects", "GET", "/projects", "per_page=5", [{ id: 13083, name: "GitLab FOSS" }]],
+    true,
+    ["Git", "DevOps"]
+  ),
 
-  // Movies / Entertainment
-  api("tvmaze", "TVmaze", "TV show search and schedule data.", "Movies / Entertainment", "https://api.tvmaze.com", "None", "https://www.tvmaze.com/api", ["Search shows", "GET", "/search/shows", "q=the+office", [{ show: { name: "The Office" } }]], true, ["TV"]),
-  api("omdb", "OMDb API", "Movie information and ratings.", "Movies / Entertainment", "https://www.omdbapi.com", "API key required", "https://www.omdbapi.com/", ["Find a movie", "GET", "/", "t=Inception", { Title: "Inception", Response: "True" }], false, ["Movies"]),
-  api("tmdb", "The Movie Database", "Movies, TV, people and images.", "Movies / Entertainment", "https://api.themoviedb.org/3", "API key or bearer token required", "https://developer.themoviedb.org/docs", ["Popular movies", "GET", "/movie/popular", "", { results: [] }], false, ["Movies"]),
-  api("jikan", "Jikan", "Unofficial MyAnimeList API for anime and manga data.", "Movies / Entertainment", "https://api.jikan.moe/v4", "None", "https://docs.api.jikan.moe/", ["Top anime", "GET", "/top/anime", "", { data: [] }], true, ["Anime"]),
-  api("rickmorty", "Rick and Morty API", "Characters, locations and episodes from Rick and Morty.", "Movies / Entertainment", "https://rickandmortyapi.com/api", "None", "https://rickandmortyapi.com/documentation", ["List characters", "GET", "/character", "", { info: {}, results: [] }], true, ["TV"]),
-  api("spotify", "Spotify Web API", "Music catalog, playlists and user library.", "Movies / Entertainment", "https://api.spotify.com/v1", "OAuth token required", "https://developer.spotify.com/documentation/web-api", ["Search tracks", "GET", "/search", "q=Daft+Punk\ntype=track", { tracks: { items: [] } }], false, ["Music"]),
+  // 10. E-commerce & Products
+  api(
+    "dummyjson",
+    "DummyJSON Products",
+    "Sample e-commerce catalog with prices, ratings, inventory, categories, and reviews.",
+    "E-commerce & Products",
+    "https://dummyjson.com",
+    "None",
+    "https://dummyjson.com/docs/products",
+    ["Get product", "GET", "/products/1", "", { id: 1, title: "Essence Mascara Lash Princess", price: 9.99, stock: 99 }],
+    true,
+    ["Products", "Catalog", "Shopping"]
+  ),
+  api(
+    "fake-store",
+    "Fake Store Products",
+    "Mock retail store catalog with electronics, jewelry, clothing, and shopping carts.",
+    "E-commerce & Products",
+    "https://fakestoreapi.com",
+    "None",
+    "https://fakestoreapi.com/docs",
+    ["Get product item", "GET", "/products/1", "", { id: 1, title: "Fjallraven Backpack", price: 109.95, category: "men's clothing" }],
+    true,
+    ["Store", "Cart", "Retail"]
+  ),
 
-  // GitHub / Developer
-  api("github", "GitHub REST API", "Repositories, users, issues and developer data.", "GitHub / Developer", "https://api.github.com", "Optional token for higher limits", "https://docs.github.com/en/rest", ["Get Octocat", "GET", "/users/octocat", "", { login: "octocat" }], true, ["Developer"]),
-  api("gitlab", "GitLab API", "GitLab projects, groups, users and CI data.", "GitHub / Developer", "https://gitlab.com/api/v4", "Optional token for public endpoints", "https://docs.gitlab.com/api/rest/", ["List projects", "GET", "/projects", "per_page=5", [{ id: 1, name: "..." }]], true, ["Developer"]),
-  api("npm-registry", "npm Registry", "Package metadata from the npm registry.", "GitHub / Developer", "https://registry.npmjs.org", "None", "https://github.com/npm/registry/blob/main/docs/REGISTRY-API.md", ["React package", "GET", "/react", "", { name: "react", versions: {} }], true, ["Packages"]),
-  api("libraries-io", "Libraries.io", "Open-source package and dependency metadata.", "GitHub / Developer", "https://libraries.io/api", "API key required", "https://libraries.io/api", ["Search libraries", "GET", "/search", "q=react", [{ name: "react" }]], false, ["Packages"]),
-  api("stackoverflow", "Stack Exchange API", "Questions, answers, users and tags from Stack Exchange.", "GitHub / Developer", "https://api.stackexchange.com/2.3", "None for basic quota", "https://api.stackexchange.com/docs", ["Recent Stack Overflow questions", "GET", "/questions", "site=stackoverflow\npagesize=5", { items: [] }], true, ["Community"]),
-  api("huggingface", "Hugging Face Hub API", "Models, datasets and spaces on the Hugging Face Hub.", "GitHub / Developer", "https://huggingface.co/api", "Optional token for public listing", "https://huggingface.co/docs/hub/api", ["List models", "GET", "/models", "limit=5", [{ id: "..." }]], true, ["ML"]),
+  // 11. Education
+  api(
+    "poetrydb",
+    "PoetryDB Literature",
+    "Internet's first open database of poetry, poet biographies, and classical literature.",
+    "Education",
+    "https://poetrydb.org",
+    "None",
+    "https://github.com/thundercomb/poetrydb",
+    ["Get poem", "GET", "/title/Ozymandias", "", [{ title: "Ozymandias", author: "Percy Bysshe Shelley", lines: ["I met a traveller from an antique land..."] }]],
+    true,
+    ["Poetry", "Literature", "Books", "Education"]
+  ),
+  api(
+    "wikipedia",
+    "Wikipedia REST Knowledge",
+    "Official Wikimedia REST API providing summary extracts and article metadata.",
+    "Education",
+    "https://en.wikipedia.org/api/rest_v1",
+    "None",
+    "https://www.mediawiki.org/wiki/API_reference",
+    ["Page summary", "GET", "/page/summary/Technology", "", { title: "Technology", extract: "Technology is the application of knowledge..." }],
+    true,
+    ["Encyclopedia", "Reference", "Knowledge"]
+  ),
+  api(
+    "datamuse",
+    "Datamuse Thesaurus",
+    "Powerful word-finding engine for developers: synonyms, rhymes, and definitions.",
+    "Education",
+    "https://api.datamuse.com",
+    "None",
+    "https://www.datamuse.com/api/",
+    ["Related words", "GET", "/words", "ml=developer", [{ word: "programmer", score: 95000 }, { word: "architect", score: 85000 }]],
+    true,
+    ["Language", "Dictionary", "Words"]
+  ),
 
-  // AI
-  api("openai", "OpenAI API", "Models, responses and embeddings for AI applications.", "AI", "https://api.openai.com/v1", "API key required", "https://platform.openai.com/docs/api-reference", ["List models", "GET", "/models", "", { data: [] }], false, ["LLM"]),
-  api("anthropic", "Anthropic API", "Claude messages and related AI capabilities.", "AI", "https://api.anthropic.com/v1", "API key required", "https://docs.anthropic.com/en/api", ["Create message", "POST", "/messages", "", { id: "msg_...", content: [] }], false, ["LLM"]),
-  api("gemini", "Gemini API", "Google Gemini generative AI models.", "AI", "https://generativelanguage.googleapis.com/v1beta", "API key required", "https://ai.google.dev/gemini-api/docs", ["Generate content", "POST", "/models/gemini-2.0-flash:generateContent", "", { candidates: [] }], false, ["LLM"]),
-  api("mistral", "Mistral AI API", "Mistral chat completions and embeddings.", "AI", "https://api.mistral.ai/v1", "API key required", "https://docs.mistral.ai/api/", ["Chat completion", "POST", "/chat/completions", "", { choices: [] }], false, ["LLM"]),
-  api("cohere", "Cohere API", "Generation, embeddings and reranking.", "AI", "https://api.cohere.com/v2", "API key required", "https://docs.cohere.com/", ["Chat", "POST", "/chat", "", { message: {} }], false, ["LLM"]),
-  api("replicate", "Replicate API", "Run and manage hosted machine-learning models.", "AI", "https://api.replicate.com/v1", "API token required", "https://replicate.com/docs/reference/http", ["List models", "GET", "/models", "", { results: [] }], false, ["ML"]),
+  // 12. Government & Public Data
+  api(
+    "us-treasury",
+    "US Treasury Fiscal Data",
+    "Official United States Treasury financial reference data, interest rates, debt, and revenue.",
+    "Government & Public Data",
+    "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v2/accounting/od",
+    "None",
+    "https://fiscaldata.treasury.gov/api-documentation/",
+    ["Average interest rates", "GET", "/avg_interest_rates", "page[size]=3", { data: [{ record_date: "2024-01-31", avg_interest_rate_amt: "3.12" }] }],
+    true,
+    ["Treasury", "Finance", "Government", "Fiscal"]
+  ),
+  api(
+    "govuk",
+    "GOV.UK Content API",
+    "Official digital services and content metadata published across the UK government.",
+    "Government & Public Data",
+    "https://www.gov.uk/api",
+    "None",
+    "https://content-api.publishing.service.gov.uk/",
+    ["Search content", "GET", "/search.json", "q=passport", { total: 120, results: [] }],
+    true,
+    ["UK", "PublicServices"]
+  ),
+  api(
+    "census",
+    "US Census Demographics",
+    "Demographic, socio-economic, housing, and population data from the US Census Bureau.",
+    "Government & Public Data",
+    "https://api.census.gov/data/2023/acs/acs5",
+    "None",
+    "https://www.census.gov/data/developers/data-sets.html",
+    ["Population estimates", "GET", "/profile", "get=NAME,DP05_0001E\nfor=state:*", [["NAME", "DP05_0001E", "state"], ["California", "39029342", "06"]]],
+    true,
+    ["Demographics", "Population", "Statistics"]
+  ),
 
-  // E-commerce
-  api("fake-store", "Fake Store API", "Sample products and carts for e-commerce prototypes.", "E-commerce", "https://fakestoreapi.com", "None", "https://fakestoreapi.com/docs", ["Get product", "GET", "/products/1", "", { id: 1, title: "..." }], true, ["Mock"]),
-  api("dummyjson-products", "DummyJSON Products", "Product catalog and cart sample data.", "E-commerce", "https://dummyjson.com", "None", "https://dummyjson.com/docs/products", ["List products", "GET", "/products", "limit=5", { products: [] }], true, ["Mock"]),
-  api("stripe", "Stripe API", "Payments, customers, invoices and subscriptions.", "E-commerce", "https://api.stripe.com/v1", "Secret key required", "https://docs.stripe.com/api", ["List products", "GET", "/products", "", { data: [] }], false, ["Payments"]),
-  api("shopify", "Shopify Admin API", "Store products, orders and customers.", "E-commerce", "https://{shop}.myshopify.com/admin/api/2025-01", "Store access token required", "https://shopify.dev/docs/api/admin-rest", ["List products", "GET", "/products.json", "", { products: [] }], false, ["Store"]),
-  api("paypal", "PayPal REST API", "PayPal orders, payments and payouts.", "E-commerce", "https://api-m.sandbox.paypal.com", "OAuth client credentials required", "https://developer.paypal.com/api/rest/", ["Create order", "POST", "/v2/checkout/orders", "", { id: "...", status: "CREATED" }], false, ["Payments"]),
-  api("woocommerce", "WooCommerce REST API", "Products, orders and customers for WooCommerce stores.", "E-commerce", "https://example.com/wp-json/wc/v3", "Consumer key and secret required", "https://woocommerce.github.io/woocommerce-rest-api-docs/", ["List products", "GET", "/products", "", []], false, ["Store"]),
+  // 13. Social Media
+  api(
+    "bluesky",
+    "Bluesky AT Protocol",
+    "Decentralized public social network feeds, actor profiles, and open social graphs.",
+    "Social Media",
+    "https://public.api.bsky.app/xrpc",
+    "None",
+    "https://docs.bsky.app/docs/api/",
+    ["Get profile", "GET", "/app.bsky.actor.getProfile", "actor=atproto.com", { did: "did:plc:ewvi7nxzyoun6zhxrhs64oiz", handle: "atproto.com" }],
+    true,
+    ["Decentralized", "Social", "Microblogging"]
+  ),
+  api(
+    "mastodon",
+    "Mastodon Public Timeline",
+    "ActivityPub federated social network public timeline and community posts.",
+    "Social Media",
+    "https://mastodon.social/api/v1",
+    "Bearer Token required",
+    "https://docs.joinmastodon.org/api/",
+    ["Public timeline", "GET", "/timelines/public", "limit=5", [{ id: "10982348", content: "<p>Hello Mastodon!</p>" }]],
+    false,
+    ["Federated", "ActivityPub", "Social"],
+    "credential_required"
+  ),
 
-  // Education
-  api("open-library", "Open Library", "Books, authors and editions from an open catalog.", "Education", "https://openlibrary.org", "None", "https://openlibrary.org/developers/api", ["Search books", "GET", "/search.json", "q=api+design", { docs: [] }], true, ["Books"]),
-  api("crossref", "Crossref REST API", "Scholarly works, journals, publishers and DOI metadata.", "Education", "https://api.crossref.org", "None", "https://api.crossref.org/swagger-ui/index.html", ["Search works", "GET", "/works", "query=machine+learning\nrows=5", { message: { items: [] } }], true, ["Research"]),
-  api("openalex", "OpenAlex", "Open scholarly works, authors, institutions and concepts.", "Education", "https://api.openalex.org", "None", "https://docs.openalex.org/", ["Search works", "GET", "/works", "search=climate+change\nper-page=5", { results: [] }], true, ["Research"]),
-  api("wikipedia", "Wikipedia REST API", "Wikipedia page summaries and content.", "Education", "https://en.wikipedia.org/api/rest_v1", "None", "https://www.mediawiki.org/wiki/API_reference", ["Page summary", "GET", "/page/summary/India", "", { title: "India", extract: "..." }], true, ["Knowledge"]),
-  api("gutenberg", "Project Gutenberg", "Public-domain books and metadata.", "Education", "https://gutendex.com", "None", "https://gutendex.com/", ["List books", "GET", "/books", "search=pride", { results: [] }], true, ["Books"]),
-  api("datamuse", "Datamuse", "Word-finding, related-word and vocabulary queries.", "Education", "https://api.datamuse.com", "None", "https://www.datamuse.com/api/", ["Related words", "GET", "/words", "ml=happy", [{ word: "glad", score: 0 }]], true, ["Language"]),
+  // 14. Crypto & Blockchain
+  api(
+    "binance",
+    "Binance Crypto Market",
+    "Global real-time cryptocurrency ticker prices, 24-hour volume, and market statistics.",
+    "Crypto & Blockchain",
+    "https://api.binance.com/api/v3",
+    "None",
+    "https://developers.binance.com/docs/binance-spot-api-docs/rest-api/market-data-endpoints",
+    ["Crypto price ticker", "GET", "/ticker/price", "symbol=BTCUSDT", { symbol: "BTCUSDT", price: "96500.00" }],
+    true,
+    ["Bitcoin", "Ethereum", "Crypto", "Markets"]
+  ),
+  api(
+    "coinbase",
+    "Coinbase Exchange Ticker",
+    "Institutional cryptocurrency spot prices, orderbook tickers, and trade volume.",
+    "Crypto & Blockchain",
+    "https://api.exchange.coinbase.com",
+    "None",
+    "https://docs.cdp.coinbase.com/exchange/reference/exchangerestapi_getproductticker",
+    ["BTC-USD ticker", "GET", "/products/BTC-USD/ticker", "", { price: "96500.50", volume: "12450.8", product_id: "BTC-USD" }],
+    true,
+    ["Coinbase", "Trading", "Crypto"]
+  ),
+  api(
+    "coinpaprika",
+    "Coinpaprika Asset Directory",
+    "Global directory of thousands of cryptocurrencies, contracts, and market metrics.",
+    "Crypto & Blockchain",
+    "https://api.coinpaprika.com/v1",
+    "None",
+    "https://docs.coinpaprika.com/",
+    ["List coins", "GET", "/coins", "", [{ id: "btc-bitcoin", name: "Bitcoin", symbol: "BTC", rank: 1 }]],
+    true,
+    ["Coins", "Assets", "Blockchain"]
+  ),
+  api(
+    "blockchain-info",
+    "Blockchain.com Charts",
+    "Bitcoin blockchain statistics, transaction volume, hash rates, and difficulty charts.",
+    "Crypto & Blockchain",
+    "https://api.blockchain.info",
+    "None",
+    "https://www.blockchain.com/explorer/api/charts_api",
+    ["Market price chart", "GET", "/charts/market-price", "timespan=30days\nformat=json", { status: "ok", name: "Market Price (USD)", values: [] }],
+    true,
+    ["Blockchain", "Bitcoin", "HashRate"]
+  ),
 
-  // Government
-  api("data-gov", "Data.gov Catalog API", "US government open-data catalog metadata.", "Government", "https://catalog.data.gov/api/3", "None", "https://catalog.data.gov/api/3", ["Package search", "GET", "/action/package_search", "q=climate\nrows=5", { result: { results: [] } }], true, ["Open Data"]),
-  api("usa-gov", "USA.gov Search API", "Search USA.gov content and services.", "Government", "https://api.gsa.gov/technology/searchgov/v2", "API key required", "https://search.gov/developer/", ["Search", "GET", "/results.json", "query=benefits", { web: {} }], false, ["US"]),
-  api("govuk", "GOV.UK Content API", "Content items and publishing data from GOV.UK.", "Government", "https://www.gov.uk/api", "None", "https://content-api.publishing.service.gov.uk/", ["Search content", "GET", "/search.json", "q=passport", { results: [] }], true, ["UK"]),
-  api("fbi", "FBI Crime Data API", "US crime data and summaries.", "Government", "https://cde.ucr.cjis.gov/LATEST", "API key required", "https://cde.ucr.cjis.gov/LATEST/webapp/#/pages/docApi", ["Arrest states", "GET", "/arrest/state", "from=2020\nto=2020\ntype=totals", { data: [] }], false, ["US"]),
-  api("nasa", "NASA APIs", "NASA imagery, astronomy and mission data.", "Government", "https://api.nasa.gov", "API key required (DEMO_KEY has strict limits)", "https://api.nasa.gov/", ["Astronomy picture", "GET", "/planetary/apod", "", { title: "...", url: "..." }], false, ["Science"]),
-  api("census", "US Census Data API", "US Census demographic and economic datasets.", "Government", "https://api.census.gov/data/2023/acs/acs5", "None for many datasets", "https://www.census.gov/data/developers/data-sets.html", ["Population estimate", "GET", "/profile", "get=NAME,DP05_0001E\nfor=state:*", [["NAME", "DP05_0001E"]]], true, ["US"]),
+  // 15. Travel
+  api(
+    "zippopotam",
+    "Zippopotam Geographic Places",
+    "Global travel destinations, city lookup, postal geographic codes and coordinates.",
+    "Travel",
+    "https://api.zippopotam.us",
+    "None",
+    "https://www.zippopotam.us/",
+    ["City & postal lookup", "GET", "/us/90210", "", { "post code": "90210", country: "United States", places: [{ "place name": "Beverly Hills", state: "California" }] }],
+    true,
+    ["Cities", "Destinations", "Travel", "Places"]
+  ),
+  api(
+    "geocoding-travel",
+    "Travel Geocoding Directory",
+    "Instant worldwide city lookup, elevation, country codes, and geographical travel coordinates.",
+    "Travel",
+    "https://geocoding-api.open-meteo.com/v1",
+    "None",
+    "https://open-meteo.com/en/docs/geocoding-api",
+    ["City search", "GET", "/search", "name=Paris", { results: [{ id: 2988507, name: "Paris", country: "France", latitude: 48.8534, longitude: 2.3488 }] }],
+    true,
+    ["Cities", "Coordinates", "Tourism"]
+  ),
 
-  // Social
-  api("reddit", "Reddit JSON API", "Public subreddit and post listings.", "Social", "https://www.reddit.com", "OAuth required for production usage", "https://www.reddit.com/dev/api/", ["Subreddit hot posts", "GET", "/r/programming/hot.json", "limit=5", { data: { children: [] } }], false, ["Community"]),
-  api("mastodon", "Mastodon API", "Federated social-network timelines and accounts.", "Social", "https://mastodon.social/api/v1", "None for public timelines", "https://docs.joinmastodon.org/api/", ["Public timeline", "GET", "/timelines/public", "limit=5", []], true, ["Federated"]),
-  api("bluesky", "Bluesky AT Protocol", "Public Bluesky feeds, profiles and social graph.", "Social", "https://public.api.bsky.app/xrpc", "None for public endpoints", "https://docs.bsky.app/docs/api/", ["Get profile", "GET", "/app.bsky.actor.getProfile", "actor=atproto.com", { handle: "atproto.com" }], true, ["Federated"]),
-  api("discord", "Discord API", "Discord applications, guilds and channels.", "Social", "https://discord.com/api/v10", "Bot token or OAuth required", "https://discord.com/developers/docs/intro", ["Current user", "GET", "/users/@me", "", { id: "...", username: "..." }], false, ["Community"]),
-  api("slack", "Slack Web API", "Slack conversations, users and messaging.", "Social", "https://slack.com/api", "OAuth token required", "https://api.slack.com/web", ["List conversations", "GET", "/conversations.list", "", { ok: true, channels: [] }], false, ["Work"]),
-  api("youtube", "YouTube Data API", "YouTube videos, channels, playlists and search.", "Social", "https://www.googleapis.com/youtube/v3", "API key or OAuth required", "https://developers.google.com/youtube/v3", ["Search videos", "GET", "/search", "part=snippet\nq=API", { items: [] }], false, ["Video"]),
+  // 16. Currency & Exchange Rates
+  api(
+    "frankfurter",
+    "Frankfurter FX Exchange Rates",
+    "European Central Bank reference foreign exchange rates and daily currency conversion.",
+    "Currency & Exchange Rates",
+    "https://api.frankfurter.dev/v1",
+    "None",
+    "https://frankfurter.dev/",
+    ["Live exchange rates", "GET", "/latest", "base=USD\nsymbols=EUR,GBP,INR,JPY", { base: "USD", date: "2026-09-14", rates: { EUR: 0.92, GBP: 0.78, INR: 86.5, JPY: 152.4 } }],
+    true,
+    ["Forex", "Currency", "Conversion", "ECB"]
+  ),
+  api(
+    "exchangerate-host",
+    "ExchangeRate.host",
+    "Global currency conversion rates covering 170+ fiat and digital currencies.",
+    "Currency & Exchange Rates",
+    "https://api.exchangerate.host",
+    "Server-side key required",
+    "https://exchangerate.host/documentation",
+    ["Latest currency quotes", "GET", "/live", "source=USD", { success: true, quotes: { USDEUR: 0.92 } }],
+    false,
+    ["Currencies", "Forex"]
+  ),
 
-  // Random / Data
-  api("random-user", "Random User", "Random user profile data for prototypes.", "Random / Data", "https://randomuser.me", "None", "https://randomuser.me/documentation", ["Generate user", "GET", "/api", "", { results: [] }], true, ["Testing"]),
-  api("random-data", "Random Data API", "Random names, addresses, users and other sample data.", "Random / Data", "https://random-data-api.com/api", "None", "https://random-data-api.com/documentation", ["Random user", "GET", "/v2/users", "size=1", [{ id: 1, uid: "..." }]], true, ["Testing"]),
-  api("random-org", "RANDOM.ORG", "True random values from atmospheric noise.", "Random / Data", "https://www.random.org", "None for HTTP integers endpoint", "https://www.random.org/clients/http/api/", ["Random integers", "GET", "/integers/", "num=5\nmin=1\nmax=10\ncol=1\nbase=10\nformat=plain\nrnd=new", "1\n2\n3"], true, ["Random"]),
-  api("numbers", "Numbers API", "Trivia and facts about numbers and dates.", "Random / Data", "http://numbersapi.com", "None", "http://numbersapi.com/", ["Number trivia", "GET", "/42/trivia", "json=true", { text: "42 is ...", number: 42 }], true, ["Fun"]),
-  api("universities", "Universities API", "Worldwide university names and domains.", "Random / Data", "http://universities.hipolabs.com", "None", "https://github.com/Hipo/university-domains-list-api", ["Indian universities", "GET", "/search", "country=India", [{ name: "...", domains: [] }]], true, ["Reference"]),
-  api("sunrise-sunset", "Sunrise-Sunset", "Sunrise, sunset and civil-twilight times.", "Random / Data", "https://api.sunrise-sunset.org", "None", "https://sunrise-sunset.org/api", ["Sun times", "GET", "/json", "lat=28.6139\nlng=77.2090\nformatted=0", { results: { sunrise: "..." }, status: "OK" }], true, ["Time"])
+  // 17. Food & Restaurants
+  api(
+    "themealdb",
+    "TheMealDB Recipes & Food",
+    "Open culinary database of worldwide recipes, meal categories, and ingredients.",
+    "Food & Restaurants",
+    "https://www.themealdb.com/api/json/v1/1",
+    "None",
+    "https://www.themealdb.com/api.php",
+    ["Random recipe", "GET", "/random.php", "", { meals: [{ idMeal: "52772", strMeal: "Teriyaki Chicken Casserole", strCategory: "Chicken" }] }],
+    true,
+    ["Cooking", "Recipes", "Food", "Culinary"]
+  ),
+  api(
+    "openfoodfacts",
+    "Open Food Facts Nutrition",
+    "Global collaborative food database with ingredients, allergens, and nutritional scores.",
+    "Food & Restaurants",
+    "https://world.openfoodfacts.org/api/v2",
+    "None",
+    "https://openfoodfacts.github.io/api-documentation/",
+    ["Product details", "GET", "/product/3017620422003.json", "", { status: 1, product: { product_name: "Nutella Hazelnut Spread", brands: "Ferrero" } }],
+    true,
+    ["Nutrition", "Ingredients", "Food"]
+  ),
+
+  // 18. Random/Fun APIs
+  api(
+    "jokeapi",
+    "JokeAPI Programming Humor",
+    "Curated programming and developer jokes, puns, and humorous one-liners.",
+    "Random/Fun APIs",
+    "https://v2.jokeapi.dev",
+    "None",
+    "https://jokeapi.dev/",
+    ["Programming joke", "GET", "/joke/Programming", "type=single", { category: "Programming", joke: "There are 10 types of people in this world...", safe: true }],
+    true,
+    ["Humor", "Jokes", "Fun", "Developer"]
+  ),
+  api(
+    "dog-ceo",
+    "Dog CEO Canines",
+    "Public open API for dog breed photography and canine classifications.",
+    "Random/Fun APIs",
+    "https://dog.ceo/api",
+    "None",
+    "https://dog.ceo/dog-api/documentation/",
+    ["Random dog photo", "GET", "/breeds/image/random", "", { message: "https://images.dog.ceo/breeds/retriever-golden/n02099601_100.jpg", status: "success" }],
+    true,
+    ["Animals", "Dogs", "Photography"]
+  ),
+  api(
+    "cat-facts",
+    "Cat Facts Ninja",
+    "Random facts, biology, and historical trivia about domestic and wild cats.",
+    "Random/Fun APIs",
+    "https://catfact.ninja",
+    "None",
+    "https://catfact.ninja/",
+    ["Random cat fact", "GET", "/fact", "", { fact: "Cats sleep 70% of their lives.", length: 30 }],
+    true,
+    ["Animals", "Cats", "Trivia"]
+  ),
+  api(
+    "bored",
+    "Bored Activity Engine",
+    "Creative suggestions, hobbies, and activities to combat boredom and learn new skills.",
+    "Random/Fun APIs",
+    "https://bored-api.appbrewery.com",
+    "None",
+    "https://bored-api.appbrewery.com/",
+    ["Suggest activity", "GET", "/random", "", { activity: "Learn a new coding language or framework", type: "education" }],
+    true,
+    ["Fun", "Activities", "Productivity"]
+  ),
+  api(
+    "numbers",
+    "Numbers Trivia",
+    "Fascinating mathematical facts, historical date trivia, and number lore.",
+    "Random/Fun APIs",
+    "http://numbersapi.com",
+    "None",
+    "http://numbersapi.com/",
+    ["Number trivia", "GET", "/42/trivia", "json=true", { text: "42 is the answer to life, the universe, and everything.", number: 42, found: true }],
+    true,
+    ["Math", "Trivia", "Numbers"]
+  )
 ];
 
-export const categories = ["All", "Testing", "Public", "Weather", "Countries", "Maps / Location", "Finance", "Crypto", "News", "Sports", "Movies / Entertainment", "GitHub / Developer", "AI", "E-commerce", "Education", "Government", "Social", "Random / Data"];
+export const categories = [
+  "All",
+  "Weather & Climate",
+  "Finance, Stocks & Market Data",
+  "News",
+  "AI & Machine Learning",
+  "Maps & Geolocation",
+  "Countries & World Data",
+  "Sports",
+  "Movies & Entertainment",
+  "GitHub & Developer Tools",
+  "E-commerce & Products",
+  "Education",
+  "Government & Public Data",
+  "Social Media",
+  "Crypto & Blockchain",
+  "Travel",
+  "Currency & Exchange Rates",
+  "Food & Restaurants",
+  "Random/Fun APIs"
+];

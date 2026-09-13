@@ -9,13 +9,20 @@ export function requireUser(req, res, next) {
   const token = req.cookies?.apihub_session || req.headers.authorization?.replace(/^Bearer\s+/i, "");
   try { req.user = jwt.verify(token, secret()); next(); } catch { res.status(401).json({ success: false, message: "Authentication required." }); }
 }
+export function optionalUser(req, res, next) {
+  if (!secret()) return next();
+  const token = req.cookies?.apihub_session || req.headers.authorization?.replace(/^Bearer\s+/i, "");
+  if (!token) return next();
+  try { req.user = jwt.verify(token, secret()); } catch { /* ignore optional token verification failure */ }
+  next();
+}
 export async function requireApiKey(req, res, next) {
   const headerKey = req.headers["x-api-key"];
   const bearerKey = req.headers.authorization?.replace(/^Bearer\s+/i, "");
   const raw = String(headerKey || bearerKey || "").trim();
   if (!raw || !raw.startsWith("ah_")) return res.status(401).json({ success: false, message: "A valid APIHub API key is required." });
   const hash = crypto.createHash("sha256").update(raw).digest("hex");
-  const result = await database().query("SELECT id, user_id FROM api_keys WHERE key_hash=$1 AND revoked_at IS NULL", [hash]);
+  const result = await database().query("SELECT id, user_id, api_slug, api_name, category FROM api_keys WHERE key_hash=$1 AND revoked_at IS NULL", [hash]);
   if (!result.rowCount) return res.status(401).json({ success: false, message: "Invalid or revoked API key." });
   req.apiKey = result.rows[0]; database().query("UPDATE api_keys SET last_used_at=now() WHERE id=$1", [req.apiKey.id]).catch(() => {}); next();
 }

@@ -1,9 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { apiCatalog, categories as CATEGORIES } from "./apiCatalog";
 
 const METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const NAV = ["Home", "APIs", "Tester", "Documentation", "Explore", "AI Assistant", "Learn", "History"];
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5000").replace(/\/$/, "");
+
+export function getPublicGatewayBaseUrl() {
+  if (typeof window !== "undefined") {
+    if (window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1") {
+      if (import.meta.env.VITE_API_BASE_URL && !import.meta.env.VITE_API_BASE_URL.includes("localhost")) {
+        return import.meta.env.VITE_API_BASE_URL.replace(/\/$/, "");
+      }
+      return window.location.origin;
+    }
+  }
+  return API_BASE_URL;
+}
 function readLocal(key) { try { const value=JSON.parse(localStorage.getItem(key)||"[]"); return Array.isArray(value)?value:[]; } catch { return []; } }
 function writeLocal(key,value) { localStorage.setItem(key,JSON.stringify(value)); }
 
@@ -40,6 +52,194 @@ export function appendQueryParams(url, paramsStr = "") {
   } catch {
     return url;
   }
+}
+
+export function isHintDismissed(hintId) {
+  try {
+    const raw = sessionStorage.getItem("apihub_dismissed_ai_hints");
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) && arr.includes(hintId);
+  } catch {
+    return false;
+  }
+}
+
+export function dismissHintInStorage(hintId) {
+  try {
+    const raw = sessionStorage.getItem("apihub_dismissed_ai_hints");
+    const arr = raw ? JSON.parse(raw) : [];
+    if (!arr.includes(hintId)) {
+      arr.push(hintId);
+      sessionStorage.setItem("apihub_dismissed_ai_hints", JSON.stringify(arr));
+    }
+  } catch {}
+}
+
+export function formatUserGreetingName(user) {
+  if (!user) return "Developer";
+  const name = (user.name || "").trim();
+  if (name) {
+    return name
+      .split(/\s+/)
+      .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+      .join(" ");
+  }
+  // Safe fallback if name is unavailable: NEVER expose email domain or raw email
+  if (user.email && typeof user.email === "string") {
+    const local = user.email.split("@")[0].replace(/[^a-zA-Z0-9]/g, " ").trim();
+    if (local && local.length >= 2) {
+      return local
+        .split(/\s+/)
+        .map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+        .join(" ");
+    }
+  }
+  return "Developer";
+}
+
+export function getRouteFromUrl() {
+  if (typeof window === "undefined") return { page: "Home" };
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    const page = sp.get("page") || "Home";
+    const catalogId = sp.get("catalogId") || null;
+    const apiId = sp.get("apiId") || null;
+    const method = sp.get("method") || null;
+    const url = sp.get("url") || null;
+    return { page, catalogId, apiId, method, url };
+  } catch {
+    return { page: "Home" };
+  }
+}
+
+export function buildRouteUrl(page, data = null) {
+  try {
+    const sp = new URLSearchParams();
+    if (page && page !== "Home") {
+      sp.set("page", page);
+    }
+    const catalogId = data?.catalogId || (page === "API Details" || page === "Catalog Details" ? data?.catalogId : null);
+    const apiId = data?.apiId || (page === "API Details" || page === "Create Endpoint" ? data?.apiId : null);
+    if (catalogId) sp.set("catalogId", catalogId);
+    if (apiId) sp.set("apiId", apiId);
+    if (page === "Tester" && data?.url) {
+      sp.set("url", data.url);
+      if (data.method) sp.set("method", data.method);
+    }
+    const qs = sp.toString();
+    return qs ? `?${qs}` : window.location.pathname;
+  } catch {
+    return window.location.pathname;
+  }
+}
+
+export function AiHintTrigger({
+  hintId,
+  title = "AI Insight",
+  text,
+  aiPrompt,
+  onLearnMore,
+  align = "right",
+  position = "bottom",
+  label = "AI Tip",
+  style = {}
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isDismissed, setIsDismissed] = useState(() => isHintDismissed(hintId));
+  const hoverTimerRef = useRef(null);
+
+  const handleMouseEnter = () => {
+    if (isDismissed) return;
+    hoverTimerRef.current = setTimeout(() => {
+      setIsOpen(true);
+    }, 400);
+  };
+
+  const handleMouseLeave = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+    setIsOpen(false);
+  };
+
+  const handleDismiss = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    dismissHintInStorage(hintId);
+    setIsDismissed(true);
+    setIsOpen(false);
+  };
+
+  const handleToggleClick = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setIsOpen(v => !v);
+  };
+
+  const handleLearnMoreAction = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setIsOpen(false);
+    if (onLearnMore && aiPrompt) {
+      onLearnMore(aiPrompt);
+    }
+  };
+
+  return (
+    <div
+      className="aiHintContainer"
+      style={style}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <button
+        type="button"
+        className={`aiHintBadge ${isOpen ? "active" : ""}`}
+        onClick={handleToggleClick}
+        aria-label={`AI suggestion: ${title}`}
+        title="AI Assistant Suggestion"
+      >
+        <span className="aiHintDot">✦</span>
+        {label && <span className="aiHintLabel">{label}</span>}
+      </button>
+
+      {isOpen && (
+        <div
+          className={`aiHintPopup pos-${position} align-${align}`}
+          onClick={e => e.stopPropagation()}
+        >
+          <div className="aiHintHeader">
+            <div className="aiHintTitle">
+              <span className="aiHintIcon">✦</span>
+              <strong>{title}</strong>
+            </div>
+            <button
+              type="button"
+              className="aiHintClose"
+              onClick={handleDismiss}
+              aria-label="Dismiss this tip for the session"
+              title="Dismiss tip"
+            >
+              ×
+            </button>
+          </div>
+          <div className="aiHintBody">
+            <p>{text}</p>
+          </div>
+          <div className="aiHintFooter">
+            <button
+              type="button"
+              className="aiHintLearnMoreBtn"
+              onClick={handleLearnMoreAction}
+            >
+              Learn more with AI →
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function generateJsCode(method = "GET", fullUrl = "", body = null) {
@@ -105,11 +305,12 @@ export function generateCurlCode(method = "GET", fullUrl = "", body = null) {
 }
 
 export default function App() {
-  const [page, setPage] = useState("Home");
-  const [selectedApiId, setSelectedApiId] = useState(null);
-  const [selectedCatalogId, setSelectedCatalogId] = useState(null);
-  const [method, setMethod] = useState("GET");
-  const [url, setUrl] = useState("https://jsonplaceholder.typicode.com/posts/1");
+  const initialRoute = typeof window !== "undefined" ? getRouteFromUrl() : { page: "Home" };
+  const [page, setPage] = useState(initialRoute.page || "Home");
+  const [selectedApiId, setSelectedApiId] = useState(initialRoute.apiId || null);
+  const [selectedCatalogId, setSelectedCatalogId] = useState(initialRoute.catalogId || null);
+  const [method, setMethod] = useState(initialRoute.method || "GET");
+  const [url, setUrl] = useState(initialRoute.url || "https://jsonplaceholder.typicode.com/posts/1");
   const [headers, setHeaders] = useState("Content-Type: application/json");
   const [body, setBody] = useState("");
   const [params, setParams] = useState([{ key: "", value: "", enabled: true }]);
@@ -130,6 +331,7 @@ export default function App() {
   const [aiMessages, setAiMessages] = useState([
     { role: "assistant", text: "Hi! I’m your API Assistant. I can explain requests, responses, errors, headers and help you build an API call." }
   ]);
+  const [aiLoading, setAiLoading] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
   const [userApis, setUserApis] = useState(() => readLocal("apihub_apis"));
@@ -156,6 +358,30 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    function handlePopState(e) {
+      const state = e.state || getRouteFromUrl();
+      applyNavigation(state.page || "Home", state, { skipHistory: true });
+    }
+    window.addEventListener("popstate", handlePopState);
+
+    const initial = getRouteFromUrl();
+    const currentUrl = buildRouteUrl(initial.page, initial);
+    window.history.replaceState(
+      {
+        page: initial.page,
+        catalogId: initial.catalogId,
+        apiId: initial.apiId,
+        method: initial.method,
+        url: initial.url
+      },
+      "",
+      currentUrl
+    );
+
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
+
+  useEffect(() => {
     if (currentUser) {
       fetch(`${API_BASE_URL}/api/my-apis`, { credentials: "include" })
         .then(r => r.ok ? r.json() : null)
@@ -166,9 +392,29 @@ export default function App() {
           }
         })
         .catch(() => {});
+
+      fetch(`${API_BASE_URL}/api/saved-requests`, { credentials: "include" })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.success && Array.isArray(data.data)) {
+            setSavedRequests(data.data);
+            writeLocal("apihub_saved_requests", data.data);
+          }
+        })
+        .catch(() => {});
+
+      fetch(`${API_BASE_URL}/api/requests/history`, { credentials: "include" })
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data?.success && Array.isArray(data.data)) {
+            setHistory(data.data);
+          }
+        })
+        .catch(() => {});
     } else {
       setUserApis(readLocal("apihub_apis"));
       setUserEndpoints(readLocal("apihub_endpoints"));
+      setSavedRequests(readLocal("apihub_saved_requests"));
     }
   }, [currentUser]);
 
@@ -215,90 +461,121 @@ export default function App() {
     return typeof response.body === "string" ? response.body : JSON.stringify(response.body, null, 2);
   }, [response]);
 
-  function navigate(next, data = null) {
+  function applyNavigation(next, data = null, options = {}) {
+    setPage(next);
+    setMobileOpen(false);
 
-  setPage(next);
-
-  setMobileOpen(false);
-
-  if (next === "API Details") {
-    setSelectedApiId(data?.apiId ?? null);
-    setSelectedCatalogId(data?.catalogId ?? null);
-  }
-  if (next === "Create Endpoint") {
-    setSelectedApiId(data?.apiId ?? null);
-  }
-  if (next === "Catalog Details") {
-    setSelectedCatalogId(data?.catalogId ?? null);
-    setSelectedApiId(null);
-  }
-
-  if (next === "AI Assistant") {
-    setAiOpen(true);
-  }
-
-  if (next === "Tester" && data) {
-    if (data.savedRequest) {
-      const request = data.savedRequest;
-      setMethod(request.method || "GET");
-      setUrl(request.url || "");
-      setHeaders(typeof request.headers === "string" ? request.headers : "");
-      setBody(typeof request.body === "string" ? request.body : "");
-      setParams(Array.isArray(request.params)
-        ? request.params.map(param => ({
-            key: String(param?.key || ""),
-            value: String(param?.value || ""),
-            enabled: param?.enabled !== false
-          }))
-        : []);
-      return;
+    if (next === "API Details") {
+      setSelectedApiId(data?.apiId ?? null);
+      setSelectedCatalogId(data?.catalogId ?? null);
+    }
+    if (next === "Create Endpoint") {
+      setSelectedApiId(data?.apiId ?? null);
+    }
+    if (next === "Catalog Details") {
+      setSelectedCatalogId(data?.catalogId ?? null);
+      setSelectedApiId(null);
     }
 
-    setMethod(data.method || "GET");
+    if (next === "AI Assistant") {
+      setAiOpen(true);
+    }
 
-    const baseUrl = (data.baseUrl || "").trim().replace(/\/+$/, "");
-    const path = (data.path || "").trim().replace(/^\/+/, "");
-    const fullUrl = data.url
-      ? data.url
-      : (baseUrl && path ? `${baseUrl}/${path}` : (baseUrl || (path ? `/${path}` : "")));
+    let effectiveUrl = data?.url;
 
-    setUrl(fullUrl);
+    if (next === "Tester" && data) {
+      if (data.savedRequest) {
+        const request = data.savedRequest;
+        setMethod(request.method || "GET");
+        setUrl(request.url || "");
+        effectiveUrl = request.url || "";
+        setHeaders(typeof request.headers === "string" ? request.headers : "");
+        setBody(typeof request.body === "string" ? request.body : "");
+        setParams(Array.isArray(request.params)
+          ? request.params.map(param => ({
+              key: String(param?.key || ""),
+              value: String(param?.value || ""),
+              enabled: param?.enabled !== false
+            }))
+          : []);
+      } else {
+        if (data.method) setMethod(data.method);
 
-    if (data.parameters) {
-      const params = data.parameters
-        .split("\n")
-        .map(item => item.trim())
-        .filter(Boolean)
-        .map(item => {
-          const [key, ...valueParts] = item.split("=");
-          return {
-            key: key.trim(),
-            value: valueParts.join("=").trim(),
-            enabled: true
-          };
-        });
+        const baseUrl = (data.baseUrl || "").trim().replace(/\/+$/, "");
+        const path = (data.path || "").trim().replace(/^\/+/, "");
+        const fullUrl = data.url
+          ? data.url
+          : (baseUrl && path ? `${baseUrl}/${path}` : (baseUrl || (path ? `/${path}` : "")));
 
-      setParams(params);
-      if (params.length > 0) {
-        setTab("Params");
+        if (fullUrl) {
+          setUrl(fullUrl);
+          effectiveUrl = fullUrl;
+        }
+
+        if (data.parameters) {
+          const paramsList = data.parameters
+            .split("\n")
+            .map(item => item.trim())
+            .filter(Boolean)
+            .map(item => {
+              const [key, ...valueParts] = item.split("=");
+              return {
+                key: key.trim(),
+                value: valueParts.join("=").trim(),
+                enabled: true
+              };
+            });
+
+          setParams(paramsList);
+          if (paramsList.length > 0) {
+            setTab("Params");
+          }
+        } else if (Array.isArray(data.params)) {
+          setParams(data.params);
+        } else {
+          setParams([]);
+        }
+
+        const reqBody = Object.prototype.hasOwnProperty.call(data, "body")
+          ? data.body
+          : (Object.prototype.hasOwnProperty.call(data, "requestBody") ? data.requestBody : "");
+
+        const formattedBody = typeof reqBody === "string" ? reqBody : (reqBody ? JSON.stringify(reqBody, null, 2) : "");
+        setBody(formattedBody);
+
+        if (formattedBody && ["POST", "PUT", "PATCH"].includes((data.method || "").toUpperCase())) {
+          setTab("Body");
+        }
       }
-    } else {
-      setParams([]);
     }
 
-    const reqBody = Object.prototype.hasOwnProperty.call(data, "body")
-      ? data.body
-      : (Object.prototype.hasOwnProperty.call(data, "requestBody") ? data.requestBody : "");
-
-    const formattedBody = typeof reqBody === "string" ? reqBody : (reqBody ? JSON.stringify(reqBody, null, 2) : "");
-    setBody(formattedBody);
-
-    if (formattedBody && ["POST", "PUT", "PATCH"].includes((data.method || "").toUpperCase())) {
-      setTab("Body");
+    if (!options.skipHistory && typeof window !== "undefined") {
+      const historyData = {
+        ...data,
+        url: effectiveUrl || data?.url,
+        method: data?.method || (next === "Tester" ? method : undefined)
+      };
+      const routeUrl = buildRouteUrl(next, historyData);
+      const stateObj = {
+        page: next,
+        catalogId: data?.catalogId ?? null,
+        apiId: data?.apiId ?? null,
+        method: historyData.method ?? null,
+        url: historyData.url ?? null
+      };
+      window.history.pushState(stateObj, "", routeUrl);
     }
   }
 
-}
+  function navigate(next, data = null) {
+    applyNavigation(next, data, { skipHistory: false });
+  }
+
+  function openAiWithPrompt(prompt) {
+    if (!prompt) return;
+    setAiOpen(true);
+    askAI(prompt);
+  }
 
   function buildUrl() {
     try {
@@ -324,37 +601,114 @@ export default function App() {
     } catch (e) { setError(e.message || "Something went wrong."); }
     finally { setLoading(false); }
   }
-  function saveRequest() {
-  const saved = [{
-    id: crypto.randomUUID(),
-    method,
-    url,
-    headers,
-    body,
-    params
-  }, ...savedRequests];
+  async function saveRequest() {
+    const newReq = {
+      id: crypto.randomUUID(),
+      method,
+      url,
+      headers,
+      body,
+      params
+    };
 
-  writeLocal("apihub_saved_requests", saved);
-  setSavedRequests(saved);
-  alert("Request saved successfully!");
-}
+    if (currentUser) {
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/saved-requests`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(newReq)
+        });
+        const d = await res.json();
+        if (d.success && d.data) {
+          const saved = [d.data, ...savedRequests.filter(r => r.id !== d.data.id)];
+          writeLocal("apihub_saved_requests", saved);
+          setSavedRequests(saved);
+          showToast("Request saved to your account!");
+          return;
+        }
+      } catch {
+        // Fallback to local
+      }
+    }
+
+    const saved = [newReq, ...savedRequests];
+    writeLocal("apihub_saved_requests", saved);
+    setSavedRequests(saved);
+    showToast("Request saved locally!");
+  }
+
   function openSavedRequest(request) {
     navigate("Tester", { savedRequest: request });
   }
-  function deleteSavedRequest(index) {
+
+  async function deleteSavedRequest(index) {
+    const itemToDelete = savedRequests[index];
+    if (currentUser && itemToDelete?.id) {
+      try {
+        await fetch(`${API_BASE_URL}/api/saved-requests/${itemToDelete.id}`, {
+          method: "DELETE",
+          credentials: "include"
+        });
+      } catch {
+        // Fallback
+      }
+    }
+
     const updated = savedRequests.filter((_, requestIndex) => requestIndex !== index);
     writeLocal("apihub_saved_requests", updated);
     setSavedRequests(updated);
+    showToast("Saved request deleted.");
   }
-  function clearSavedRequests() {
+
+  async function clearSavedRequests() {
     if (!window.confirm("Clear all saved requests? This cannot be undone.")) return;
+    if (currentUser) {
+      try {
+        await fetch(`${API_BASE_URL}/api/saved-requests`, {
+          method: "DELETE",
+          credentials: "include"
+        });
+      } catch {
+        // Fallback
+      }
+    }
     localStorage.removeItem("apihub_saved_requests");
     setSavedRequests([]);
+    showToast("All saved requests cleared.");
   }
-  function askAI(text = aiInput) {
-    const q = text.trim(); if (!q) return;
-    setAiMessages(m => [...m, { role: "user", text: q }, { role: "assistant", text: response ? `For this ${method} request, your API returned ${response.status}. I can help you inspect the response, improve the request, or explain what each part means.` : "Start by sending a request. Then I can explain the status code, response, headers and possible next steps." }]);
+  async function askAI(text = aiInput) {
+    const q = (text || aiInput).trim();
+    if (!q) return;
+    setAiMessages(m => [...m, { role: "user", text: q }]);
     setAiInput("");
+    setAiLoading(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/ai/ask`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          prompt: q,
+          context: { method, url, headers, body },
+          lastResponse: response ? {
+            status: response.status,
+            statusText: response.statusText,
+            responseTimeMs: response.responseTimeMs,
+            data: response.data
+          } : null
+        })
+      });
+      const data = await res.json();
+      if (data && data.success && data.text) {
+        setAiMessages(m => [...m, { role: "assistant", text: data.text }]);
+      } else {
+        setAiMessages(m => [...m, { role: "assistant", text: data?.message || "Could not retrieve response from AI assistant." }]);
+      }
+    } catch (err) {
+      setAiMessages(m => [...m, { role: "assistant", text: "Error contacting AI Assistant service: " + err.message }]);
+    } finally {
+      setAiLoading(false);
+    }
   }
 
   return <div className="appShell">
@@ -363,25 +717,51 @@ export default function App() {
       <nav className="desktopNav">{NAV.map(item => <button key={item} className={page === item ? "navItem active" : "navItem"} onClick={() => navigate(item)}>{item}</button>)}</nav>
       <div className="topActions"><button className="aiTop" onClick={() => setAiOpen(true)}><Icon name="ai"/> AI Assistant</button>{currentUser ? <><button className="signin" onClick={() => navigate("Dashboard")}>Dashboard</button><button className="signin" onClick={signOut}>Sign out</button></> : <button className="signin" onClick={() => navigate("Sign In")}>Sign in</button>}<button className="mobileMenu" onClick={() => setMobileOpen(v => !v)}><Icon name="menu"/></button></div>
     </header>
-    {mobileOpen && <div className="mobileNav">{NAV.map(item => <button key={item} onClick={() => navigate(item)}>{item}</button>)}</div>}
+    {mobileOpen && (
+      <div className="mobileNav">
+        {NAV.map(item => (
+          <button key={item} className={page === item ? "active" : ""} onClick={() => navigate(item)}>
+            {item}
+          </button>
+        ))}
+        <div style={{ height: "1px", background: "var(--line)", margin: "8px 0" }} />
+        {currentUser ? (
+          <>
+            <button onClick={() => navigate("Dashboard")}>
+              <Icon name="settings" /> Dashboard ({currentUser.email})
+            </button>
+            <button onClick={signOut} style={{ color: "var(--danger)" }}>
+              Sign out
+            </button>
+          </>
+        ) : (
+          <>
+            <button onClick={() => navigate("Sign In")}>Sign In</button>
+            <button onClick={() => navigate("Sign Up")} style={{ color: "var(--cyan)", fontWeight: "bold" }}>
+              Create Free Account →
+            </button>
+          </>
+        )}
+      </div>
+    )}
 
     {(() => {
       switch (page) {
-        case "Home": return <Home navigate={navigate} apiCatalog={apiCatalog}/>;
-        case "Tester": return <Tester {...{method,setMethod,url,setUrl,headers,setHeaders,body,setBody,tab,setTab,response,error,loading,sendRequest,responseText,params,setParams,history,navigate,setAiOpen,saveRequest}}/>;
-        case "APIs": return <Apis navigate={navigate} catalog={apiCatalog} myApis={userApis} currentUser={currentUser} onDeleteApi={handleDeleteApi} showToast={showToast} copyToClipboard={copyToClipboard} />;
-        case "API Details": return <APIDetails navigate={navigate} apiId={selectedApiId} catalogId={selectedCatalogId} currentUser={currentUser} userApis={userApis} onDeleteApi={handleDeleteApi} showToast={showToast} copyToClipboard={copyToClipboard} />;
+        case "Home": return <Home navigate={navigate} apiCatalog={apiCatalog} onLearnMore={openAiWithPrompt}/>;
+        case "Tester": return <Tester {...{method,setMethod,url,setUrl,headers,setHeaders,body,setBody,tab,setTab,response,error,loading,sendRequest,responseText,params,setParams,history,navigate,setAiOpen,saveRequest,onLearnMore:openAiWithPrompt}}/>;
+        case "APIs": return <Apis navigate={navigate} catalog={apiCatalog} myApis={userApis} currentUser={currentUser} onDeleteApi={handleDeleteApi} showToast={showToast} copyToClipboard={copyToClipboard} onLearnMore={openAiWithPrompt} />;
+        case "API Details": return <APIDetails navigate={navigate} apiId={selectedApiId} catalogId={selectedCatalogId} currentUser={currentUser} userApis={userApis} onDeleteApi={handleDeleteApi} showToast={showToast} copyToClipboard={copyToClipboard} onLearnMore={openAiWithPrompt} />;
         case "Create API": return <CreateAPI navigate={navigate} currentUser={currentUser} onApiCreated={api => setUserApis(prev => [api, ...prev.filter(x => x.id !== api.id)])} />;
-        case "Sign In": return <AccountPage navigate={navigate} mode="signin" onAuthenticated={setCurrentUser}/>;
-        case "Sign Up": return <AccountPage navigate={navigate} mode="signup" onAuthenticated={setCurrentUser}/>;
-        case "Dashboard": return <Dashboard navigate={navigate} user={currentUser} showToast={showToast} copyToClipboard={copyToClipboard} />;
+        case "Sign In": return <AccountPage navigate={navigate} mode="signin" onAuthenticated={setCurrentUser} showToast={showToast}/>;
+        case "Sign Up": return <AccountPage navigate={navigate} mode="signup" onAuthenticated={setCurrentUser} showToast={showToast}/>;
+        case "Dashboard": return <Dashboard navigate={navigate} user={currentUser} showToast={showToast} copyToClipboard={copyToClipboard} onLearnMore={openAiWithPrompt} />;
         case "Create Endpoint": return <CreateEndpoint navigate={navigate} apiId={selectedApiId} currentUser={currentUser} userApis={userApis} onEndpointCreated={ep => setUserEndpoints(prev => [ep, ...prev.filter(x => x.id !== ep.id)])} />;
-        case "Explore": return <Apis navigate={navigate} catalog={apiCatalog} myApis={userApis} currentUser={currentUser} onDeleteApi={handleDeleteApi} showToast={showToast} copyToClipboard={copyToClipboard} explore={true} />;
-        case "Catalog Details": return <APIDetails navigate={navigate} apiId={selectedApiId} catalogId={selectedCatalogId} currentUser={currentUser} userApis={userApis} onDeleteApi={handleDeleteApi} showToast={showToast} copyToClipboard={copyToClipboard} />;
-        case "Documentation": return <Documentation navigate={navigate}/>;
-        case "Learn": return <Learn navigate={navigate}/>;
+        case "Explore": return <Apis navigate={navigate} catalog={apiCatalog} myApis={userApis} currentUser={currentUser} onDeleteApi={handleDeleteApi} showToast={showToast} copyToClipboard={copyToClipboard} explore={true} onLearnMore={openAiWithPrompt} />;
+        case "Catalog Details": return <APIDetails navigate={navigate} apiId={selectedApiId} catalogId={selectedCatalogId} currentUser={currentUser} userApis={userApis} onDeleteApi={handleDeleteApi} showToast={showToast} copyToClipboard={copyToClipboard} onLearnMore={openAiWithPrompt} />;
+        case "Documentation": return <Documentation navigate={navigate} currentUser={currentUser} showToast={showToast} copyToClipboard={copyToClipboard} onLearnMore={openAiWithPrompt} />;
+        case "Learn": return <Learn navigate={navigate} askAI={askAI} onLearnMore={openAiWithPrompt} />;
         case "History": return <History savedRequests={savedRequests} onOpenRequest={openSavedRequest} onDeleteRequest={deleteSavedRequest} onClearRequests={clearSavedRequests}/>;
-        case "AI Assistant": return <AssistantPage navigate={navigate} askAI={askAI} aiMessages={aiMessages} aiInput={aiInput} setAiInput={setAiInput}/>;
+        case "AI Assistant": return <AssistantPage navigate={navigate} askAI={askAI} aiMessages={aiMessages} aiInput={aiInput} setAiInput={setAiInput} aiLoading={aiLoading}/>;
         case "Privacy": return <Privacy navigate={navigate}/>;
         default: return <Placeholder title={page} navigate={navigate}/>;
       }
@@ -390,24 +770,27 @@ export default function App() {
     {aiOpen && <aside className="aiPanel">
       <div className="aiPanelHead"><div><span className="eyebrow">APIHUB INTELLIGENCE</span><h3><Icon name="ai"/> API Assistant</h3></div><button className="close" onClick={() => setAiOpen(false)}>×</button></div>
       <div className="aiStatus"><span className="onlineDot"/> Ready to help with your API workflow</div>
-      <div className="aiChat">{aiMessages.map((m,i)=><div key={i} className={m.role === "user" ? "bubble user" : "bubble assistant"}>{m.text}</div>)}</div>
+      <div className="aiChat">
+        {aiMessages.map((m,i)=><div key={i} className={m.role === "user" ? "bubble user" : "bubble assistant"}>{m.text}</div>)}
+        {aiLoading && <div className="bubble assistant" style={{ fontStyle: "italic", opacity: 0.7 }}>Thinking…</div>}
+      </div>
       <div className="aiSuggestions"><button onClick={() => askAI("Explain my current request")}>Explain request</button><button onClick={() => askAI("Explain the response")}>Explain response</button><button onClick={() => askAI("How do I add headers?")}>Headers help</button></div>
       <div className="aiInput"><input value={aiInput} onChange={e => setAiInput(e.target.value)} onKeyDown={e => e.key === "Enter" && askAI()} placeholder="Ask anything about this API..."/><button onClick={() => askAI()}><Icon name="arrow"/></button></div>
     </aside>}
 
     {toast && <div className="toastNotification"><span>✓</span> {toast}</div>}
 
-    <footer><div><button className="brand footerBrand footerBrandButton" onClick={() => navigate("Home")}><div className="logoMark"><span>API</span></div><strong>APIHub</strong></button><p>Discover, provide, document and test APIs in one developer workspace.</p></div><div className="footerLinks">{[["APIs","APIs"],["Tester","Tester"],["Documentation","Documentation"],["Learn","Learn"],["Privacy","Privacy"]].map(([label,target]) => <button key={label} onClick={() => navigate(target)}>{label}</button>)}</div><small>© 2026 APIHub</small></footer>
+    <Footer navigate={navigate} currentUser={currentUser} signOut={signOut} />
   </div>;
 }
 
-function Home({navigate, apiCatalog}) {
+function Home({navigate, apiCatalog, onLearnMore}) {
   return <main className="homePage">
     <section className="heroHome"><div className="heroCopy"><div className="eyebrow">THE API WORKSPACE FOR BUILDERS</div><h1>Build, explore & <span>test APIs</span> in one place.</h1><p>Discover APIs, test endpoints, create your own API documentation and use AI to understand what is happening behind every request.</p><div className="heroButtons"><button className="primaryBtn" onClick={() => navigate("Create API")}>Start Testing <Icon name="arrow"/></button><button className="secondaryBtn" onClick={() => navigate("Explore")}>Explore APIs</button></div><div className="trustLine"><span>● No setup required</span><span>● Developer focused</span><span>● Student friendly</span></div></div><div className="heroVisual"><div className="orb orbOne"/><div className="orb orbTwo"/><div className="miniTerminal"><div className="terminalTop"><span/> <span/> <span/><b>API Request</b></div><div className="requestLine"><em>GET</em><code>/api/users?limit=5</code><strong>200 OK</strong></div><div className="codeLine">{`{ "users": [ ... ] }`}</div><div className="terminalStats"><span>124 ms</span><span>1.8 KB</span><span>JSON</span></div></div></div></section>
     <section className="featureGrid"><Feature icon="api" title="API Provider" text="Create, manage and publish APIs with endpoints, responses, authentication and documentation."/><Feature icon="tester" title="API Testing" text="Build requests with params, headers and bodies, then inspect status, timing and response data."/><Feature icon="docs" title="Documentation" text="Turn every endpoint into clear developer documentation with examples and a Try API flow."/><Feature icon="explore" title="API Explorer" text="Discover useful APIs by category and open them directly in the testing workspace."/></section>
     <section className="workflowSection"><div><div className="eyebrow">HOW APIHUB CONNECTS THE WORKFLOW</div><h2>From API discovery to a working request.</h2><p>APIHub keeps the core developer workflow together. Explore an API, understand its docs, test it, then use the response in your project.</p></div><div className="workflow"><Step n="01" title="Discover" text="Find an API or create your own."/><Step n="02" title="Understand" text="Read endpoints, parameters and examples."/><Step n="03" title="Test" text="Send requests and inspect responses."/><Step n="04" title="Build" text="Take the API into your application."/></div></section>
     <section className="showcase"><div><div className="eyebrow">POWERFUL BY DESIGN</div><h2>Your API workbench, without the clutter.</h2><p>Keep requests, collections, history, documentation and AI guidance close to the work you are doing.</p><button className="textBtn" onClick={() => navigate("Tester")}>Open API Tester <Icon name="arrow"/></button></div><div className="darkCard"><div className="darkCardHeader"><span>REQUEST</span><span className="successBadge">200 OK</span></div><div className="darkUrl"><b>GET</b> https://api.example.com/users</div><div className="darkTabs"><span className="selected">Params</span><span>Headers</span><span>Body</span><span>Auth</span></div><div className="darkRows"><div><span>userId</span><b>1</b></div><div><span>limit</span><b>5</b></div></div></div></section>
-    <section className="catalogPreview"><div className="sectionHead"><div><div className="eyebrow">EXPLORE</div><h2>Start with an API.</h2></div><button className="textBtn" onClick={() => navigate("Explore")}>View all <Icon name="arrow"/></button></div><div className="catalogGrid">{apiCatalog.map(api => <ApiCard key={api.name} api={api} navigate={navigate}/>)}</div></section>
+    <section className="catalogPreview"><div className="sectionHead"><div><div className="eyebrow">EXPLORE</div><h2>Start with an API.</h2></div><button className="textBtn" onClick={() => navigate("Explore")}>View all <Icon name="arrow"/></button></div><div className="catalogGrid">{apiCatalog.map(api => <ApiCard key={api.name} api={api} navigate={navigate} onLearnMore={onLearnMore}/>)}</div></section>
   </main>;
 }
 
@@ -416,7 +799,21 @@ function Step({n,title,text}) { return <div className="step"><b>{n}</b><div><h3>
 
 function Tester(p) {
   return <main className="pageWrap testerPage"><div className="pageIntro"><div><div className="eyebrow">API TESTER</div><h1>Test an API from one focused workspace.</h1><p>Configure a request, send it through the APIHub backend, and inspect the response.</p></div><button className="aiAction" onClick={() => p.setAiOpen(true)}><Icon name="ai"/> Ask AI</button></div>
-    <section className="testerShell"><div className="requestbar"><select value={p.method} onChange={e => p.setMethod(e.target.value)}>{METHODS.map(m => <option key={m}>{m}</option>)}</select><input value={p.url} onChange={e => p.setUrl(e.target.value)} placeholder="https://api.example.com/endpoint"/><button className="sendBtn" onClick={p.sendRequest} disabled={p.loading}>{p.loading ? "Sending…" : "Send Request"} <Icon name="arrow"/></button></div>
+    <section className="testerShell">
+      <div className="requestbar">
+        <select value={p.method} onChange={e => p.setMethod(e.target.value)}>{METHODS.map(m => <option key={m}>{m}</option>)}</select>
+        <input value={p.url} onChange={e => p.setUrl(e.target.value)} placeholder="https://api.example.com/endpoint"/>
+        <button className="sendBtn" onClick={p.sendRequest} disabled={p.loading}>{p.loading ? "Sending…" : "Send Request"} <Icon name="arrow"/></button>
+        <AiHintTrigger
+          hintId="hint_tester_execute"
+          title="Safe Proxy Execution"
+          text="Tester sends requests through APIHub's backend gateway proxy to eliminate CORS restrictions and benchmark latency."
+          aiPrompt="How does APIHub execute API requests without triggering browser CORS restrictions or leaking tokens?"
+          onLearnMore={p.onLearnMore}
+          position="bottom"
+          align="right"
+        />
+      </div>
       <div className="testerPanels"><div className="requestPanel"><div className="panelTop"><div className="tabs">{["Params","Headers","Body"].map(t => <button key={t} className={p.tab === t ? "tab active" : "tab"} onClick={() => p.setTab(t)}>{t}</button>)}</div><button className="tinyAction" onClick={p.saveRequest}>+ Save</button></div>
         {p.tab === "Params" && <div className="paramBox"><div className="paramHeader"><span>Query parameters</span><button onClick={() => p.setParams([...p.params,{key:"",value:"",enabled:true}])}>+ Add parameter</button></div>{p.params.map((row,i)=><div className="paramRow" key={i}><input type="checkbox" checked={row.enabled} onChange={e => p.setParams(p.params.map((x,j)=>j===i?{...x,enabled:e.target.checked}:x))}/><input value={row.key} onChange={e=>p.setParams(p.params.map((x,j)=>j===i?{...x,key:e.target.value}:x))} placeholder="Key"/><input value={row.value} onChange={e=>p.setParams(p.params.map((x,j)=>j===i?{...x,value:e.target.value}:x))} placeholder="Value"/><button onClick={()=>p.setParams(p.params.filter((_,j)=>j!==i))}>×</button></div>)}</div>}
         {p.tab === "Headers" && <div className="fieldBox"><label>Request headers</label><textarea value={p.headers} onChange={e => p.setHeaders(e.target.value)} placeholder={'Content-Type: application/json\nAuthorization: Bearer YOUR_TOKEN'}/><small>One header per line. Keep private credentials out of screenshots.</small></div>}
@@ -426,7 +823,7 @@ function Tester(p) {
     <div className="testerBottom"><div className="infoCard"><div className="featureIcon"><Icon name="history"/></div><div><b>Recent requests</b><p>Requests from this browser session are kept here for quick re-runs.</p></div><span className="count">{p.history.length}</span></div><div className="infoCard aiInfo"><div className="featureIcon"><Icon name="ai"/></div><div><b>Need help?</b><p>Open API Assistant to explain your request, response or error.</p></div><span>✦</span></div></div>
   </main>;
 }
-function Apis({ navigate, catalog = [], explore = false, myApis = [], currentUser, onDeleteApi, showToast, copyToClipboard }) {
+function Apis({ navigate, catalog = [], explore = false, myApis = [], currentUser, onDeleteApi, showToast, copyToClipboard, onLearnMore }) {
   const [tab, setTab] = useState(explore ? "curated" : "curated");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("All");
@@ -512,7 +909,7 @@ function Apis({ navigate, catalog = [], explore = false, myApis = [], currentUse
           {filteredCatalog.length ? (
             <div className="catalogGrid">
               {filteredCatalog.map(api => (
-                <ApiCard key={api.id || api.name} api={api} navigate={navigate} />
+                <ApiCard key={api.id || api.name} api={api} navigate={navigate} onLearnMore={onLearnMore} />
               ))}
             </div>
           ) : (
@@ -578,7 +975,7 @@ function Apis({ navigate, catalog = [], explore = false, myApis = [], currentUse
   );
 }
 
-function ApiCard({ api, navigate }) {
+function ApiCard({ api, navigate, onLearnMore }) {
   const isTestable = Boolean(api.testable);
   const endpointCount = api.endpoints?.length || 1;
 
@@ -588,9 +985,20 @@ function ApiCard({ api, navigate }) {
         <div className="apiLogo">
           {api.name.charAt(0)}
         </div>
-        <span className={isTestable ? "liveBadge" : "requiresBadge"}>
-          {isTestable ? "Gateway Ready" : "Credentials needed"}
-        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          <span className={isTestable ? "liveBadge" : "requiresBadge"}>
+            {isTestable ? "Gateway Ready" : "Credentials needed"}
+          </span>
+          <AiHintTrigger
+            hintId={`hint_card_${api.id || api.name.toLowerCase().replace(/\s+/g, "_")}`}
+            title={`${api.name} Gateway`}
+            text={`Proxy requests through /api/gateway/${api.id || "..."}. Rate limits and key verification are applied automatically.`}
+            aiPrompt={`Explain how APIHub routes requests to the ${api.name} (${api.category}) API and how to use it in code.`}
+            onLearnMore={onLearnMore}
+            position="bottom"
+            align="right"
+          />
+        </div>
       </div>
 
       <h3>{api.name}</h3>
@@ -628,77 +1036,284 @@ function ApiCard({ api, navigate }) {
     </article>
   );
 }
-function Documentation({ navigate }) {
-  const sections = [
-    ["Getting Started","Open Explore, choose a public API, then use Try API to load its selected endpoint into Tester.","GET https://jsonplaceholder.typicode.com/posts/1"],["API Basics","An API lets one application request data or actions from another. A base URL identifies a service; an endpoint identifies an operation.","Base URL: https://api.example.com\nEndpoint: /users"],["REST APIs","REST commonly uses resource URLs and HTTP methods to describe operations.","GET /users\nPOST /users"],["HTTP Methods","GET reads, POST creates, PUT replaces, PATCH changes part, and DELETE removes.","PATCH /users/42"],["Status Codes","2xx is success; 4xx usually means input or permission trouble; 5xx is server-side.","200 OK · 400 Bad Request · 404 Not Found"],["Headers","Headers carry metadata such as content type and authorization. Enter one Name: value pair per line.","Content-Type: application/json"],["Query Parameters","Query parameters refine a request after a question mark.","GET /search?q=api&page=1"],["Path Parameters","Replace documented placeholders with a resource value.","GET /users/{id} → /users/42"],["Request Body","POST, PUT, and PATCH often send a body. Use JSON when the API expects it.",'{ "name": "APIHub" }'],["JSON","JSON uses objects, lists, strings, numbers, booleans, and null.",'{ "id": 1, "active": true }'],["Authentication","APIs may use keys, bearer tokens, OAuth, or signatures. Do not enter real secrets in this build.","Authorization: Bearer YOUR_TOKEN"],["CRUD","Create, Read, Update, Delete often map to POST, GET, PUT/PATCH, DELETE.","POST /items · GET /items/1 · DELETE /items/1"],["API Testing","Configure method, URL, parameters, headers, and body; send, inspect, then save useful requests.","Check status, response shape, and errors."],["API Documentation","Good docs cover endpoint, method, parameters, auth, body, response, and errors.","Document both success and common failures."],["Common Errors","Check URL, method, required parameters, headers, response body, and API availability.","401 Unauthorized · 404 Not Found · timeout"],["How APIHub works","Phase 1 keeps your API definitions and saved requests locally in this browser; the backend proxies Tester requests.","Local storage is not shared across devices."]
-  ]; const [active,setActive]=useState(0); const item=sections[active];
-  return (
-    <main className="docsPage"><aside className="docsSide"><button className="textBtn" onClick={()=>navigate("Home")}>← Back home</button><h3>Documentation</h3>{sections.map(([title],i)=><button key={title} className={active===i?"docActive":""} onClick={()=>setActive(i)}>{title}</button>)}</aside><section className="docsContent"><div className="eyebrow">APIHUB GUIDES</div><h1>{item[0]}</h1><p className="lead">{item[1]}</p><div className="docCode"><span>EXAMPLE</span><pre>{item[2]}</pre></div><div className="contentNav"><button className="secondaryBtn" disabled={!active} onClick={()=>setActive(active-1)}>← Previous</button><button className="secondaryBtn" disabled={active===sections.length-1} onClick={()=>setActive(active+1)}>Next →</button></div></section></main>
-  );
-}
-function SignIn({ navigate }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+function Documentation({ navigate, currentUser, showToast, copyToClipboard, onLearnMore }) {
+  const [keyModalOpen, setKeyModalOpen] = useState(false);
+  const [docLang, setDocLang] = useState("javascript");
+  const [selectedApiSlug, setSelectedApiSlug] = useState("open-meteo");
 
-  function handleSignIn(e) {
-    e.preventDefault();
-
-    if (!email || !password) {
-      alert("Please enter email and password.");
-      return;
+  const sampleApis = [
+    {
+      slug: "open-meteo",
+      name: "Open-Meteo Weather",
+      path: "/forecast?latitude=40.71&longitude=-74.00&current=temperature_2m",
+      method: "GET",
+      description: "Global weather forecast & current conditions"
+    },
+    {
+      slug: "jsonplaceholder",
+      name: "JSONPlaceholder Posts",
+      path: "/posts/1",
+      method: "GET",
+      description: "Mock REST resources for testing"
+    },
+    {
+      slug: "cat-facts",
+      name: "Cat Facts",
+      path: "/fact",
+      method: "GET",
+      description: "Random cat facts in JSON format"
+    },
+    {
+      slug: "dummyjson",
+      name: "DummyJSON Products",
+      path: "/products/1",
+      method: "GET",
+      description: "Mock e-commerce catalog API"
     }
+  ];
 
-    alert("Sign in successful!");
-    navigate("Home");
+  const currentSample = sampleApis.find(a => a.slug === selectedApiSlug) || sampleApis[0];
+  const gatewayHost = getPublicGatewayBaseUrl();
+  const sampleUrl = `${gatewayHost}/api/gateway/${currentSample.slug}${currentSample.path}`;
+
+  const jsSample = `// JavaScript (Fetch / Node.js 18+)
+// Store your API key in an environment variable or config file
+const response = await fetch("${sampleUrl}", {
+  method: "${currentSample.method}",
+  headers: {
+    "X-API-Key": "YOUR_APIHUB_API_KEY",
+    "Content-Type": "application/json"
   }
+});
+
+const data = await response.json();
+console.log(data);`;
+
+  const pythonSample = `# Python (requests)
+# pip install requests
+import requests
+import os
+
+# Use environment variable: os.getenv("APIHUB_API_KEY")
+url = "${sampleUrl}"
+headers = {
+    "X-API-Key": "YOUR_APIHUB_API_KEY"
+}
+
+response = requests.${currentSample.method.toLowerCase()}(url, headers=headers)
+print("Status:", response.status_code)
+print("Data:", response.json())`;
+
+  const curlSample = `curl -X ${currentSample.method} "${sampleUrl}" \\
+  -H "X-API-Key: YOUR_APIHUB_API_KEY"`;
+
+  const activeSnippet = docLang === "javascript"
+    ? jsSample
+    : (docLang === "python" ? pythonSample : curlSample);
+
+  const sections = [
+    ["Gateway Quickstart", "Access any curated or user-defined API using your single APIHub API Key through our reverse proxy gateway.", sampleUrl],
+    ["Authentication & Keys", "Authenticate every gateway request by passing your APIHub API key in the X-API-Key header. We verify the key's SHA-256 hash server-side.", "X-API-Key: YOUR_APIHUB_API_KEY"],
+    ["Where to Put Your Key", "Best practices for storing and referencing your APIHub API key in client or backend projects without leaking secrets.", "APIHUB_API_KEY=YOUR_APIHUB_API_KEY\n# In backend code: headers['X-API-Key'] = process.env.APIHUB_API_KEY"],
+    ["Beginner Step-by-Step Flow", "Complete 8-step journey for developers from account creation to production integration.", "1. Sign Up / Sign In to your APIHub developer account.\n2. Browse the 18-category Marketplace and select an API.\n3. Click 'Get API Key' to generate a real scoped or global key.\n4. Copy your raw key immediately (shown once; stored as SHA-256 hash).\n5. Store in your project's .env file: APIHUB_API_KEY=ah_live_...\n6. Send requests to the APIHub Gateway with header: X-API-Key: YOUR_KEY\n7. Inspect live response metrics and track usage in Dashboard.\n8. Revoke keys instantly anytime to invalidate compromised access."],
+    ["Common Errors & Troubleshooting", "Diagnostic matrix for 401, 403, 404, 429, and 500 status codes returned by the gateway.", "• 401 Unauthorized: Missing or invalid X-API-Key header, or revoked key.\n  Fix: Verify X-API-Key header name and generate an active key from Dashboard.\n\n• 403 Forbidden: Scope mismatch (e.g. key scoped to Weather used for Crypto).\n  Fix: Generate a Global Key or one scoped to the target API.\n\n• 404 Not Found: Target API slug or endpoint path does not exist on gateway.\n  Fix: Check API Catalog for the exact slug (e.g. /api/gateway/open-meteo/forecast).\n\n• 429 Too Many Requests: Gateway limit of 60 requests/minute exceeded for this key.\n  Fix: Implement client backoff/retry with a 60-second delay or local caching.\n\n• 502 Bad Gateway: Upstream provider is temporarily unreachable or timed out.\n  Fix: Check provider status or retry shortly."],
+    ["Getting Started", "Open Explore, choose a public API, then use Try API to load its selected endpoint into Tester.", "GET https://jsonplaceholder.typicode.com/posts/1"],
+    ["API Basics", "An API lets one application request data or actions from another. A base URL identifies a service; an endpoint identifies an operation.", "Base URL: https://api.example.com\nEndpoint: /users"],
+    ["REST APIs", "REST commonly uses resource URLs and HTTP methods to describe operations.", "GET /users\nPOST /users"],
+    ["HTTP Methods", "GET reads, POST creates, PUT replaces, PATCH changes part, and DELETE removes.", "PATCH /users/42"],
+    ["Status Codes", "2xx is success; 4xx usually means input or permission trouble; 5xx is server-side.", "200 OK · 400 Bad Request · 401 Unauthorized · 404 Not Found · 429 Too Many Requests"],
+    ["Headers", "Headers carry metadata such as content type and authorization. Enter one Name: value pair per line.", "Content-Type: application/json\nX-API-Key: YOUR_APIHUB_API_KEY"],
+    ["Query Parameters", "Query parameters refine a request after a question mark.", "GET /search?q=api&page=1"],
+    ["Request Body", "POST, PUT, and PATCH often send a body. Use JSON when the API expects it.", '{\n  "name": "APIHub"\n}'],
+    ["Rate Limiting", "APIHub Gateway applies a per-key limit of 60 requests/minute. When exceeded, the gateway responds with HTTP 429.", "429 Too Many Requests: Rate limit exceeded. Try again in a minute."]
+  ];
+
+  const [active, setActive] = useState(0);
+  const item = sections[active];
 
   return (
-    <main className="pageWrap">
-      <div style={{ maxWidth: "450px", margin: "60px auto" }}>
-        <div className="eyebrow">APIHUB ACCOUNT</div>
-        <h1>Sign In</h1>
-        <p>Sign in to continue to your APIHub workspace.</p>
+    <main className="docsPage">
+      <ApiKeyModal
+        isOpen={keyModalOpen}
+        onClose={() => setKeyModalOpen(false)}
+        currentUser={currentUser}
+        navigate={navigate}
+        showToast={showToast}
+        onLearnMore={onLearnMore}
+      />
 
-        <form
-          onSubmit={handleSignIn}
-          style={{
-            marginTop: "30px",
-            padding: "25px",
-            border: "1px solid #ddd",
-            borderRadius: "12px"
-          }}
-        >
-          <label>Email</label>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="Enter your email"
-            style={{
-              width: "100%",
-              padding: "12px",
-              margin: "8px 0 20px"
-            }}
-          />
-
-          <label>Password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Enter your password"
-            style={{
-              width: "100%",
-              padding: "12px",
-              margin: "8px 0 20px"
-            }}
-          />
-
-          <button type="submit" className="primaryBtn">
-            Sign In
+      <aside className="docsSide">
+        <button className="textBtn" onClick={() => navigate("Home")}>
+          ← Back home
+        </button>
+        <div style={{ margin: "10px 0 16px" }}>
+          <button
+            className="primaryBtn"
+            style={{ width: "100%", justifyContent: "center", padding: "10px 12px", fontSize: "10px" }}
+            onClick={() => setKeyModalOpen(true)}
+          >
+            <Icon name="settings" /> Get API Key
           </button>
-        </form>
-      </div>
+        </div>
+        <h3>Documentation</h3>
+        {sections.map(([title], i) => (
+          <button
+            key={title}
+            className={active === i ? "docActive" : ""}
+            onClick={() => setActive(i)}
+          >
+            {title}
+          </button>
+        ))}
+      </aside>
+
+      <section className="docsContent">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "20px", flexWrap: "wrap" }}>
+          <div>
+            <div className="eyebrow">APIHUB DEVELOPER GUIDES</div>
+            <h1>{item[0]}</h1>
+            <p className="lead">{item[1]}</p>
+          </div>
+          <button className="primaryBtn" onClick={() => setKeyModalOpen(true)}>
+            <Icon name="settings" /> Get API Key
+          </button>
+        </div>
+
+        {/* Dedicated Gateway Developer Interactive Guide on top-level topics */}
+        {active <= 2 && (
+          <div style={{ marginTop: "24px" }}>
+            {/* Step-by-step project integration box */}
+            <div style={{ background: "rgba(100, 220, 203, 0.06)", border: "1px solid rgba(100, 220, 203, 0.3)", borderRadius: "12px", padding: "20px", marginBottom: "24px" }}>
+              <b style={{ color: "#64dccb", fontSize: "13px", display: "block", marginBottom: "8px" }}>
+                🔑 How to use your APIHub API Key in your project:
+              </b>
+              <ol style={{ margin: 0, paddingLeft: "20px", fontSize: "12px", color: "#dbe8f7", lineHeight: "1.9" }}>
+                <li>
+                  Click the <b>Get API Key</b> button to generate your live key (format: <code>ah_live_...</code>).
+                </li>
+                <li>
+                  In your own application, create a <code>.env</code> file and add:
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", margin: "6px 0" }}>
+                    <code style={{ background: "#050b13", padding: "6px 10px", borderRadius: "6px", border: "1px solid #1c2e46", color: "#64dccb", fontSize: "11px" }}>
+                      APIHUB_API_KEY=YOUR_APIHUB_API_KEY
+                    </code>
+                    <button
+                      className="copySnippetBtn"
+                      onClick={() => copyToClipboard ? copyToClipboard("APIHUB_API_KEY=YOUR_APIHUB_API_KEY", "Env placeholder copied!") : navigator.clipboard?.writeText("APIHUB_API_KEY=YOUR_APIHUB_API_KEY")}
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </li>
+                <li>
+                  Attach the header <code>X-API-Key: YOUR_APIHUB_API_KEY</code> to all requests targeting the APIHub Gateway URL.
+                </li>
+                <li>
+                  The APIHub Gateway verifies your key, validates rate limits, and proxies the request to the target API.
+                </li>
+              </ol>
+            </div>
+
+            {/* Live interactive code generator for sample APIs */}
+            <div style={{ marginBottom: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "10px" }}>
+                <b style={{ fontSize: "12px", color: "#a9bed8" }}>Select an API to generate code:</b>
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                  {sampleApis.map(s => (
+                    <button
+                      key={s.slug}
+                      className={`filter ${selectedApiSlug === s.slug ? "active" : ""}`}
+                      style={{ fontSize: "9px", padding: "6px 10px" }}
+                      onClick={() => setSelectedApiSlug(s.slug)}
+                    >
+                      {s.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="gatewayUrlBar" style={{ marginBottom: "12px" }}>
+                <div style={{ minWidth: 0, overflow: "hidden" }}>
+                  <span style={{ color: "var(--muted)", marginRight: "8px" }}>Gateway URL:</span>
+                  <code>{sampleUrl}</code>
+                </div>
+                <button
+                  className="copySnippetBtn"
+                  onClick={() => copyToClipboard ? copyToClipboard(sampleUrl, "Gateway URL copied!") : navigator.clipboard?.writeText(sampleUrl)}
+                >
+                  Copy URL
+                </button>
+              </div>
+
+              <div className="codeSnippetWrap">
+                <div className="snippetHeader">
+                  <div className="langTabs">
+                    <button
+                      className={`langTab ${docLang === "javascript" ? "active" : ""}`}
+                      onClick={() => setDocLang("javascript")}
+                    >
+                      JavaScript (fetch)
+                    </button>
+                    <button
+                      className={`langTab ${docLang === "python" ? "active" : ""}`}
+                      onClick={() => setDocLang("python")}
+                    >
+                      Python (requests)
+                    </button>
+                    <button
+                      className={`langTab ${docLang === "curl" ? "active" : ""}`}
+                      onClick={() => setDocLang("curl")}
+                    >
+                      cURL
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <AiHintTrigger
+                      hintId="hint_doc_code"
+                      title="Client & Server Integration"
+                      text="Never expose API keys in client-side bundles. Store APIHUB_API_KEY in backend environment variables and forward headers."
+                      aiPrompt="Show me how to securely configure environment variables for APIHub API keys in Node.js and Python."
+                      onLearnMore={onLearnMore}
+                      position="bottom"
+                      align="right"
+                    />
+                    <button
+                      className="copySnippetBtn"
+                      onClick={() => copyToClipboard ? copyToClipboard(activeSnippet, `${docLang.toUpperCase()} code copied!`) : navigator.clipboard?.writeText(activeSnippet)}
+                    >
+                      Copy Code
+                    </button>
+                  </div>
+                </div>
+                <pre className="snippetBody">{activeSnippet}</pre>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Section specific example with copy button */}
+        <div className="docCode" style={{ position: "relative" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+            <span>EXAMPLE SPECIFICATION</span>
+            <button
+              className="copySnippetBtn"
+              onClick={() => copyToClipboard ? copyToClipboard(item[2], "Example copied!") : navigator.clipboard?.writeText(item[2])}
+            >
+              Copy
+            </button>
+          </div>
+          <pre>{item[2]}</pre>
+        </div>
+
+        <div className="contentNav">
+          <button className="secondaryBtn" disabled={!active} onClick={() => setActive(active - 1)}>
+            ← Previous
+          </button>
+          <button className="secondaryBtn" disabled={active === sections.length - 1} onClick={() => setActive(active + 1)}>
+            Next →
+          </button>
+        </div>
+      </section>
     </main>
   );
 }
@@ -740,60 +1355,376 @@ function History({ savedRequests, onOpenRequest, onDeleteRequest, onClearRequest
     </main>
   );
 }
-function Learn({ navigate }) {
+const LEARN_TOPICS = [
+  {
+    id: 1,
+    title: "1. What is an API?",
+    category: "Fundamentals",
+    icon: "◈",
+    summary: "An API (Application Programming Interface) defines formal contracts and protocols for software components to communicate and exchange data securely.",
+    takeaway: "APIs abstract implementation details behind clean endpoints (URLs) and structured payloads (JSON).",
+    testerUrl: null
+  },
+  {
+    id: 2,
+    title: "2. How REST APIs Work",
+    category: "Fundamentals",
+    icon: "⌁",
+    summary: "REST (Representational State Transfer) is a stateless architectural style utilizing standard HTTP methods and resource-oriented URIs.",
+    takeaway: "Client issues HTTP request (Method + URL + Headers + Body) → Server processes → Server returns HTTP response (Status + Headers + Body).",
+    testerUrl: "https://jsonplaceholder.typicode.com/posts/1"
+  },
+  {
+    id: 3,
+    title: "3. HTTP Methods",
+    category: "Fundamentals",
+    icon: "▦",
+    summary: "GET (read), POST (create), PUT (complete replacement), PATCH (partial update), DELETE (remove resource).",
+    takeaway: "GET, PUT, and DELETE are idempotent (repeating identical requests yields the same system state). POST creates new resources.",
+    testerUrl: "https://jsonplaceholder.typicode.com/posts"
+  },
+  {
+    id: 4,
+    title: "4. HTTP Status Codes",
+    category: "Fundamentals",
+    icon: "◎",
+    summary: "Three-digit codes indicating outcomes: 2xx (Success), 3xx (Redirection), 4xx (Client Error), 5xx (Server/Upstream Error).",
+    takeaway: "Key codes: 200 OK, 201 Created, 400 Bad Request, 401 Unauthorized, 403 Forbidden, 404 Not Found, 429 Rate Limit, 500 Server Error.",
+    testerUrl: null
+  },
+  {
+    id: 5,
+    title: "5. Headers & Content-Type",
+    category: "Fundamentals",
+    icon: "▤",
+    summary: "HTTP headers convey metadata for authentication, caching, content negotiation, and payloads.",
+    takeaway: "Standard headers include 'Content-Type: application/json', 'Accept: application/json', and 'X-API-Key: YOUR_KEY'.",
+    testerUrl: null
+  },
+  {
+    id: 6,
+    title: "6. Query Parameters vs Path vs Body",
+    category: "Fundamentals",
+    icon: "✦",
+    summary: "Path params identify specific entities (/users/42). Query params filter or paginate (/users?page=2). Body carries structured data for POST/PUT.",
+    takeaway: "Never pass sensitive credentials in URL query strings because URLs are recorded in browser histories and proxy logs.",
+    testerUrl: "https://api.open-meteo.com/v1/forecast?latitude=40.71&longitude=-74.00&current=temperature_2m"
+  },
+  {
+    id: 7,
+    title: "7. API Authentication Mechanisms",
+    category: "Security",
+    icon: "⚙",
+    summary: "Mechanisms to establish caller identity: API Keys (like APIHub's X-API-Key), Bearer JWT tokens, HTTP Basic Auth, and OAuth 2.0 flows.",
+    takeaway: "APIHub verifies keys using SHA-256 hashes against PostgreSQL without ever storing or logging raw keys.",
+    testerUrl: null
+  },
+  {
+    id: 8,
+    title: "8. Rate Limiting & 429 Handling",
+    category: "Security",
+    icon: "↺",
+    summary: "Algorithms like Token Bucket and Sliding Window throttle excessive requests to guard against abuse and denial-of-service.",
+    takeaway: "The APIHub Gateway applies a default 60 req/min quota. When exceeded, the gateway returns HTTP 429 with Retry-After guidance.",
+    testerUrl: null
+  },
+  {
+    id: 9,
+    title: "9. CORS & Browser Security",
+    category: "Security",
+    icon: "◈",
+    summary: "Cross-Origin Resource Sharing is a browser sandbox policy preventing client-side scripts from reading responses from foreign origins without permission.",
+    takeaway: "The APIHub Gateway acts as a trusted reverse proxy, handling upstream communication server-to-server and bypassing browser CORS blocks.",
+    testerUrl: null
+  },
+  {
+    id: 10,
+    title: "10. Webhooks vs REST APIs",
+    category: "Architecture",
+    icon: "⌁",
+    summary: "REST APIs require client polling. Webhooks push event payloads directly to a subscriber URL in real time as events happen.",
+    takeaway: "Use REST for synchronous user-driven requests and Webhooks for asynchronous notifications (e.g. payment confirmations).",
+    testerUrl: null
+  },
+  {
+    id: 11,
+    title: "11. GraphQL vs REST",
+    category: "Architecture",
+    icon: "▦",
+    summary: "REST exposes multiple distinct endpoints. GraphQL exposes a single /graphql endpoint allowing clients to query specific fields.",
+    takeaway: "GraphQL prevents over-fetching and under-fetching but adds query complexity and makes HTTP-level edge caching harder.",
+    testerUrl: null
+  },
+  {
+    id: 12,
+    title: "12. gRPC vs REST",
+    category: "Architecture",
+    icon: "◎",
+    summary: "gRPC uses Protocol Buffers over HTTP/2 for high-throughput, low-latency microservice RPCs with strict typing.",
+    takeaway: "REST + JSON is standard for public developer platforms; gRPC is ideal for high-throughput internal microservice meshes.",
+    testerUrl: null
+  },
+  {
+    id: 13,
+    title: "13. API Versioning Strategies",
+    category: "Architecture",
+    icon: "▤",
+    summary: "Strategies to introduce changes without breaking existing consumers: URI versioning (/v1), Query param (?v=1), or Accept headers.",
+    takeaway: "URI versioning (/v1/..., /v2/...) is the clearest, most cache-friendly, and most developer-friendly approach.",
+    testerUrl: null
+  },
+  {
+    id: 14,
+    title: "14. Caching & ETags",
+    category: "Architecture",
+    icon: "✦",
+    summary: "Drastically reduce latency and server compute using Cache-Control directives, ETags, and conditional 304 Not Modified responses.",
+    takeaway: "ETags allow clients to validate whether cached representations match current server state using 'If-None-Match'.",
+    testerUrl: null
+  },
+  {
+    id: 15,
+    title: "15. Pagination Patterns",
+    category: "Architecture",
+    icon: "⚙",
+    summary: "Techniques for chunking large datasets: Limit/Offset (?limit=20&offset=40), Page-based, and Cursor-based pagination.",
+    takeaway: "Cursor-based pagination is recommended for frequently mutating datasets to prevent skipped or duplicate items.",
+    testerUrl: null
+  },
+  {
+    id: 16,
+    title: "16. Error Handling Best Practices",
+    category: "Best Practices",
+    icon: "↺",
+    summary: "Providing predictable, consistent error payloads with machine-readable error codes and actionable human-readable messages.",
+    takeaway: "Standardize on consistent error schemas: { success: false, code: 'INVALID_API_KEY', message: '...' } with appropriate HTTP status codes.",
+    testerUrl: null
+  },
+  {
+    id: 17,
+    title: "17. API Security Best Practices",
+    category: "Best Practices",
+    icon: "◈",
+    summary: "Essential defenses: mandatory TLS, strict input validation, rate limiting, SQL injection defense, SSRF prevention, and secret segregation.",
+    takeaway: "Never embed API secrets in frontend bundles or commit them to source control. Always inject them via server-side environment variables.",
+    testerUrl: null
+  }
+];
+
+const ROADMAP_STEPS = [
+  {
+    num: "01",
+    title: "Marketplace Discovery",
+    desc: "Browse 18 live API categories with verified endpoint schemas, interactive documentation, and testing tools."
+  },
+  {
+    num: "02",
+    title: "SHA-256 Key Issuance",
+    desc: "Generate an APIHub key with 32 bytes of secure random entropy. PostgreSQL stores only the cryptographic SHA-256 hash."
+  },
+  {
+    num: "03",
+    title: "Project Configuration",
+    desc: "Store your raw key once in your application's .env file (APIHUB_API_KEY=ah_live_...). Never expose it in client code."
+  },
+  {
+    num: "04",
+    title: "Gateway Dispatch",
+    desc: "Send requests to /api/gateway/:slug with header X-API-Key: YOUR_KEY. Works across cURL, Node.js, Python, and any HTTP client."
+  },
+  {
+    num: "05",
+    title: "Rate Limiting & Auth",
+    desc: "APIHub Gateway validates the 60 req/min quota and authenticates your hashed key and tenant permissions in milliseconds."
+  },
+  {
+    num: "06",
+    title: "Secure Reverse Proxy",
+    desc: "The gateway injects required provider credentials server-side and forwards requests with SSRF protection to upstream providers."
+  },
+  {
+    num: "07",
+    title: "Usage & Revocation",
+    desc: "Track request volume and latency in the Developer Dashboard. Revoke keys with immediate real-time effect if needed."
+  }
+];
+
+function Learn({ navigate, askAI, onLearnMore }) {
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const categories = ["All", "Fundamentals", "Security", "Architecture", "Best Practices"];
+
+  const filteredTopics = LEARN_TOPICS.filter(topic => {
+    const matchesCategory = activeCategory === "All" || topic.category === activeCategory;
+    const matchesSearch = !searchQuery || 
+      topic.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      topic.summary.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      topic.takeaway.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesCategory && matchesSearch;
+  });
+
   return (
     <main className="pageWrap">
       <div className="pageIntro">
         <div>
-          <div className="eyebrow">APIHUB LEARN</div>
-          <h1>Learn APIs</h1>
-          <p>Build your API knowledge from the basics to practical testing.</p>
+          <div className="eyebrow">APIHUB DEVELOPER ACADEMY</div>
+          <h1>Learn APIs & Architecture</h1>
+          <p>Master REST design, HTTP protocols, gateway architectures, and API security. Interactive guidance powered by the APIHub AI Assistant.</p>
         </div>
 
-        <button
-          className="secondaryBtn"
-          onClick={() => navigate("Home")}
-        >
-          ← Back to Home
-        </button>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <button
+            className="primaryBtn"
+            onClick={() => {
+              if (askAI) askAI("Give me an API knowledge quiz!");
+              navigate("AI Assistant");
+            }}
+          >
+            <Icon name="ai" /> Take API Quiz
+          </button>
+          <button
+            className="secondaryBtn"
+            onClick={() => navigate("Home")}
+          >
+            ← Back to Home
+          </button>
+        </div>
       </div>
 
-      <section className="featureGrid">
-        <Feature
-          icon="◈"
-          title="API Fundamentals"
-          text="Learn what APIs are, how they work, and why applications use them."
-        />
+      {/* Learn APIHub: Developer Journey & Gateway Roadmap */}
+      <section style={{ background: "linear-gradient(180deg, rgba(16, 28, 48, 0.6) 0%, rgba(9, 17, 30, 0.8) 100%)", border: "1px solid #1a2c47", borderRadius: "14px", padding: "24px", marginBottom: "36px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px", marginBottom: "20px" }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+              <div className="eyebrow" style={{ color: "#64dccb", margin: 0 }}>ARCHITECTURAL ROADMAP</div>
+              <AiHintTrigger
+                hintId="hint_learn_roadmap"
+                title="Zero-Secret Architecture"
+                text="APIHub stores only cryptographic SHA-256 hashes of developer keys. Provider secrets never leave the server."
+                aiPrompt="Walk me through APIHub's 4-phase architecture: Discovery, Key Issuance, Gateway Proxying, and Usage Tracking."
+                onLearnMore={onLearnMore || (askAI ? (p) => { askAI(p); navigate("AI Assistant"); } : null)}
+                position="bottom"
+                align="left"
+              />
+            </div>
+            <h2 style={{ margin: "4px 0 8px", fontSize: "18px", color: "#eef4ff" }}>How APIHub Works: The Developer Journey</h2>
+            <p style={{ margin: 0, color: "#8ca0bb", fontSize: "12px", maxWidth: "680px", lineHeight: "1.6" }}>
+              From initial discovery in our 18-category marketplace to production reverse proxy dispatch, see how APIHub handles authentication, tenant isolation, rate limiting, and zero-secret persistence.
+            </p>
+          </div>
+          <button className="secondaryBtn" onClick={() => navigate("Documentation")} style={{ fontSize: "11px" }}>
+            View Full Docs →
+          </button>
+        </div>
 
-        <Feature
-          icon="⌁"
-          title="HTTP Methods"
-          text="Understand GET, POST, PUT, PATCH and DELETE requests."
-        />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "14px" }}>
+          {ROADMAP_STEPS.map((step) => (
+            <div key={step.num} style={{ background: "#060d19", border: "1px solid #14233a", borderRadius: "10px", padding: "16px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+                  <span style={{ fontFamily: "'Space Grotesk'", fontWeight: "700", color: "#64dccb", fontSize: "14px" }}>{step.num}</span>
+                  <span style={{ fontSize: "9px", padding: "2px 6px", borderRadius: "4px", background: "rgba(100, 220, 203, 0.1)", color: "#64dccb" }}>Phase</span>
+                </div>
+                <h4 style={{ margin: "0 0 6px", fontSize: "13px", color: "#fff" }}>{step.title}</h4>
+                <p style={{ margin: 0, color: "#8ca0bb", fontSize: "11px", lineHeight: "1.6" }}>{step.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
-        <Feature
-          icon="▤"
-          title="Status Codes"
-          text="Learn common HTTP status codes such as 200, 201, 400, 401, 404 and 500."
-        />
+      {/* 17 Topics Curriculum */}
+      <section>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "14px", marginBottom: "20px" }}>
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            {categories.map(cat => (
+              <button
+                key={cat}
+                className={`filter ${activeCategory === cat ? "active" : ""}`}
+                style={{ fontSize: "11px", padding: "7px 14px" }}
+                onClick={() => setActiveCategory(cat)}
+              >
+                {cat === "All" ? "All 17 Topics" : cat}
+              </button>
+            ))}
+          </div>
 
-        <Feature
-          icon="◎"
-          title="API Testing"
-          text="Practice sending requests and reading API responses with APIHub Tester."
-        />
+          <input
+            type="text"
+            placeholder="Search API concepts..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            style={{ width: "240px", background: "#060e1a", border: "1px solid #1c2e46", color: "#fff", padding: "7px 12px", borderRadius: "8px", fontSize: "11px" }}
+          />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: "18px" }}>
+          {filteredTopics.map(topic => (
+            <article key={topic.id} style={{ background: "#08101e", border: "1px solid #16263d", borderRadius: "12px", padding: "20px", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
+              <div>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                  <span style={{ fontSize: "9px", textTransform: "uppercase", padding: "3px 8px", borderRadius: "5px", background: "rgba(111, 126, 255, 0.12)", color: "#9aa6ff", fontWeight: "600" }}>
+                    {topic.category}
+                  </span>
+                  <span style={{ fontSize: "16px", color: "#64dccb" }}>{topic.icon}</span>
+                </div>
+
+                <h3 style={{ margin: "0 0 8px", fontSize: "15px", color: "#eef4ff" }}>{topic.title}</h3>
+                <p style={{ margin: "0 0 14px", color: "#8ca0bb", fontSize: "11px", lineHeight: "1.6" }}>{topic.summary}</p>
+
+                <div style={{ background: "#050a12", border: "1px solid #121e30", borderRadius: "8px", padding: "10px 12px", marginBottom: "16px" }}>
+                  <span style={{ display: "block", fontSize: "9px", color: "#64dccb", textTransform: "uppercase", fontWeight: "700", marginBottom: "4px" }}>Key Takeaway:</span>
+                  <p style={{ margin: 0, color: "#d2dbe8", fontSize: "11px", lineHeight: "1.5" }}>{topic.takeaway}</p>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", paddingTop: "12px", borderTop: "1px solid #121e30" }}>
+                <button
+                  className="secondaryBtn"
+                  style={{ flex: 1, fontSize: "10px", padding: "6px 10px", justifyContent: "center" }}
+                  onClick={() => {
+                    if (askAI) askAI(`Explain in depth with code examples and best practices: ${topic.title}`);
+                    navigate("AI Assistant");
+                  }}
+                >
+                  <Icon name="ai" /> Explain with AI
+                </button>
+
+                {topic.testerUrl && (
+                  <button
+                    className="primaryBtn"
+                    style={{ fontSize: "10px", padding: "6px 12px", justifyContent: "center" }}
+                    onClick={() => navigate("Tester", { url: topic.testerUrl, method: "GET" })}
+                  >
+                    Try in Tester →
+                  </button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
       </section>
     </main>
   );
 }
-function AssistantPage({ navigate, askAI, aiMessages, aiInput, setAiInput }) {
+
+function AssistantPage({ navigate, askAI, aiMessages, aiInput, setAiInput, aiLoading }) {
+  const quickPrompts = [
+    { label: "Take a Quiz", prompt: "Give me an API knowledge quiz!" },
+    { label: "401 vs 403", prompt: "What is the difference between 401 Unauthorized and 403 Forbidden?" },
+    { label: "Secure API Keys", prompt: "Where should I store and how should I use my API key in Node.js or Python?" },
+    { label: "Explain Status Codes", prompt: "Explain the common HTTP status codes: 200, 201, 400, 401, 403, 404, 429, 500." },
+    { label: "Analyze Last Request", prompt: "Explain the response from my last API Tester execution." }
+  ];
+
   return (
     <main className="pageWrap">
       <div className="pageIntro">
         <div>
-          <div className="eyebrow">APIHUB AI</div>
-          <h1>AI Assistant</h1>
-          <p>Get help understanding APIs, requests, responses and errors.</p>
+          <div className="eyebrow">APIHUB INTELLIGENCE</div>
+          <h1>AI Learning & Diagnostic Assistant</h1>
+          <p>Ask questions about API protocols, test your knowledge with quizzes, debug status codes, or analyze requests.</p>
         </div>
 
         <button
@@ -804,44 +1735,98 @@ function AssistantPage({ navigate, askAI, aiMessages, aiInput, setAiInput }) {
         </button>
       </div>
 
-      <section className="providerTable">
-        <div className="sectionHead">
-          <div>
-            <h2>API Assistant</h2>
-            <p>Ask anything about your API request.</p>
+      <section style={{ background: "#070d18", border: "1px solid #16263c", borderRadius: "14px", overflow: "hidden" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid #16263c", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span className="onlineDot" />
+            <strong style={{ color: "#fff", fontSize: "13px" }}>API Assistant Active</strong>
+            <span style={{ fontSize: "10px", color: "#6b809b" }}>· Powered by APIHub Core Engine</span>
+          </div>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+            {quickPrompts.map(qp => (
+              <button
+                key={qp.label}
+                className="filter"
+                style={{ fontSize: "9px", padding: "4px 8px" }}
+                onClick={() => askAI(qp.prompt)}
+              >
+                {qp.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div style={{ padding: "20px" }}>
+        {/* Message stream */}
+        <div style={{ padding: "20px", maxHeight: "480px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "16px" }}>
           {aiMessages.map((msg, index) => (
-            <p key={index}>
-              <b>{msg.role === "user" ? "You" : "AI"}:</b> {msg.text}
-            </p>
+            <div
+              key={index}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: msg.role === "user" ? "flex-end" : "flex-start"
+              }}
+            >
+              <div style={{ fontSize: "10px", color: "#6b809b", marginBottom: "4px", paddingLeft: "4px", paddingRight: "4px" }}>
+                {msg.role === "user" ? "You" : "API Assistant"}
+              </div>
+              <div
+                style={{
+                  maxWidth: "85%",
+                  padding: "14px 18px",
+                  borderRadius: "12px",
+                  background: msg.role === "user" ? "#1e3a5f" : "#0c1524",
+                  border: msg.role === "user" ? "1px solid #2e5488" : "1px solid #18283e",
+                  color: "#e2ecfa",
+                  fontSize: "12px",
+                  lineHeight: "1.7",
+                  whiteSpace: "pre-wrap"
+                }}
+              >
+                {msg.text}
+              </div>
+            </div>
           ))}
 
-          <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
-            <input
-              value={aiInput}
-              onChange={(e) => setAiInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") askAI();
-              }}
-              placeholder="Ask about APIs..."
-              style={{ flex: 1, padding: "12px" }}
-            />
+          {aiLoading && (
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+              <div style={{ fontSize: "10px", color: "#6b809b", marginBottom: "4px" }}>API Assistant</div>
+              <div style={{ padding: "12px 18px", borderRadius: "12px", background: "#0c1524", border: "1px solid #18283e", color: "#64dccb", fontSize: "11px", fontStyle: "italic" }}>
+                Thinking & generating explanation…
+              </div>
+            </div>
+          )}
+        </div>
 
-            <button className="primaryBtn" onClick={() => askAI()}>
-              Ask AI
-            </button>
-          </div>
+        {/* Input Bar */}
+        <div style={{ padding: "16px 20px", borderTop: "1px solid #16263c", background: "#050a12", display: "flex", gap: "10px" }}>
+          <input
+            value={aiInput}
+            onChange={(e) => setAiInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !aiLoading) askAI();
+            }}
+            placeholder="Ask about status codes, headers, CORS, or request a quiz..."
+            style={{ flex: 1, background: "#08111e", border: "1px solid #1a2c44", color: "#fff", padding: "12px 16px", borderRadius: "8px", fontSize: "12px" }}
+          />
+
+          <button
+            className="primaryBtn"
+            onClick={() => askAI()}
+            disabled={aiLoading}
+            style={{ padding: "12px 20px" }}
+          >
+            {aiLoading ? "Thinking…" : "Send"}
+          </button>
         </div>
       </section>
     </main>
   );
 }
-function ApiKeyModal({ isOpen, onClose, currentUser, navigate, showToast }) {
+function ApiKeyModal({ isOpen, onClose, currentUser, navigate, showToast, defaultApi = null, onLearnMore }) {
   const [keys, setKeys] = useState([]);
   const [name, setName] = useState("");
+  const [selectedSlug, setSelectedSlug] = useState("all");
   const [newSecret, setNewSecret] = useState("");
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -859,24 +1844,35 @@ function ApiKeyModal({ isOpen, onClose, currentUser, navigate, showToast }) {
       loadKeys();
       setNewSecret("");
       setErrorMsg("");
+      if (defaultApi?.slug) {
+        setSelectedSlug(defaultApi.slug);
+        setName(defaultApi.name ? `${defaultApi.name} Key` : "");
+      } else {
+        setSelectedSlug("all");
+        setName("");
+      }
     }
-  }, [isOpen, currentUser]);
+  }, [isOpen, currentUser, defaultApi]);
 
   if (!isOpen) return null;
 
   async function handleCreateKey() {
-    if (!name.trim()) {
-      setErrorMsg("Please enter a name for your API key.");
-      return;
-    }
     setLoading(true);
     setErrorMsg("");
     try {
+      const target = selectedSlug === "all" ? null : apiCatalog.find(a => a.id === selectedSlug);
+      const payload = {
+        name: name.trim() || (target ? `${target.name} Key` : "Global Developer Key"),
+        apiSlug: target ? target.id : "all",
+        apiName: target ? target.name : "All APIs (Full Access)",
+        category: target ? target.category : "All Categories"
+      };
+
       const res = await fetch(`${API_BASE_URL}/api/api-keys`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() })
+        body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (!res.ok) {
@@ -907,19 +1903,23 @@ function ApiKeyModal({ isOpen, onClose, currentUser, navigate, showToast }) {
     } catch {}
   }
 
+  const selectedTarget = selectedSlug === "all" ? null : apiCatalog.find(a => a.id === selectedSlug);
+
   return (
     <div className="modalOverlay" onClick={onClose}>
-      <div className="modalCard" onClick={e => e.stopPropagation()}>
+      <div className="modalCard" style={{ maxWidth: "660px", width: "95%" }} onClick={e => e.stopPropagation()}>
         <button className="modalClose" onClick={onClose}>×</button>
-        <div className="eyebrow">APIHUB GATEWAY AUTHENTICATION</div>
-        <h2 style={{ fontFamily: "'Space Grotesk'", margin: "10px 0" }}>API Keys</h2>
-        <p style={{ color: "var(--muted)", fontSize: "11px", lineHeight: "1.7", margin: "0 0 16px" }}>
-          Use APIHub-issued keys to authenticate external requests to the APIHub Gateway using <code>X-API-Key: ah_live_...</code>.
+        <div className="eyebrow">APIHUB GATEWAY DEVELOPER ACCESS</div>
+        <h2 style={{ fontFamily: "'Space Grotesk'", margin: "8px 0 4px" }}>
+          {selectedTarget ? `Get API Key for ${selectedTarget.name}` : "API Keys & Access"}
+        </h2>
+        <p style={{ color: "var(--muted)", fontSize: "11px", lineHeight: "1.6", margin: "0 0 16px" }}>
+          Generate a scoped key for a specific API or create a full-access key valid across all 18 catalog categories through the APIHub Gateway.
         </p>
 
         {!currentUser ? (
-          <div className="emptyState" style={{ padding: "20px" }}>
-            <p>Sign in to generate and manage APIHub API keys.</p>
+          <div className="emptyState" style={{ padding: "24px 16px" }}>
+            <p style={{ color: "#d2dbe8", marginBottom: "6px" }}>Sign in to generate and manage APIHub API keys.</p>
             <div style={{ display: "flex", gap: "10px", justifyContent: "center", marginTop: "14px" }}>
               <button className="primaryBtn" onClick={() => { onClose(); navigate("Sign In"); }}>Sign In</button>
               <button className="secondaryBtn" onClick={() => { onClose(); navigate("Sign Up"); }}>Sign Up</button>
@@ -928,13 +1928,15 @@ function ApiKeyModal({ isOpen, onClose, currentUser, navigate, showToast }) {
         ) : (
           <div>
             {newSecret ? (
-              <div style={{ background: "rgba(78, 226, 197, 0.08)", border: "1px solid rgba(78, 226, 197, 0.4)", borderRadius: "10px", padding: "16px", marginBottom: "16px" }}>
-                <b style={{ color: "#4ee2c5", display: "block", marginBottom: "8px" }}>✓ New API Key Generated:</b>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#050b14", padding: "10px", borderRadius: "8px", border: "1px solid #1c2e46" }}>
-                  <code style={{ color: "#fff", flex: 1, wordBreak: "break-all", font: "11px monospace" }}>{newSecret}</code>
+              <div style={{ background: "rgba(78, 226, 197, 0.08)", border: "1px solid rgba(78, 226, 197, 0.4)", borderRadius: "10px", padding: "18px", marginBottom: "16px" }}>
+                <b style={{ color: "#4ee2c5", display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px", fontSize: "13px" }}>
+                  ✓ API Key Generated Successfully!
+                </b>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", background: "#050b14", padding: "10px 12px", borderRadius: "8px", border: "1px solid #1c2e46" }}>
+                  <code style={{ color: "#fff", flex: 1, wordBreak: "break-all", font: "12px monospace" }}>{newSecret}</code>
                   <button
                     className="primaryBtn"
-                    style={{ padding: "7px 12px", fontSize: "10px" }}
+                    style={{ padding: "8px 14px", fontSize: "11px", whiteSpace: "nowrap" }}
                     onClick={() => {
                       if (navigator.clipboard) navigator.clipboard.writeText(newSecret);
                       if (showToast) showToast("API Key copied to clipboard!");
@@ -943,49 +1945,120 @@ function ApiKeyModal({ isOpen, onClose, currentUser, navigate, showToast }) {
                     Copy Key
                   </button>
                 </div>
-                <small style={{ display: "block", color: "#f1bd7c", marginTop: "8px" }}>
-                  ⚠️ <b>Save this key now!</b> For your security, this raw secret will not be displayed again after closing.
+                <small style={{ display: "block", color: "#f1bd7c", marginTop: "10px", lineHeight: "1.5" }}>
+                  ⚠️ <b>Save this key now!</b> For security, APIHub only stores the SHA-256 hash. This raw key cannot be viewed again after closing this window.
                 </small>
+                <div style={{ marginTop: "12px", display: "flex", justifyContent: "flex-end" }}>
+                  <button className="secondaryBtn" style={{ fontSize: "11px", padding: "6px 12px" }} onClick={() => setNewSecret("")}>
+                    + Generate Another Key
+                  </button>
+                </div>
               </div>
             ) : (
-              <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
-                <input
-                  style={{ flex: 1, background: "#060d18", border: "1px solid #22354e", color: "#fff", padding: "10px 14px", borderRadius: "8px", fontSize: "11px" }}
-                  placeholder="Key name (e.g. My App Client)"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && handleCreateKey()}
-                />
-                <button className="primaryBtn" onClick={handleCreateKey} disabled={loading}>
-                  {loading ? "Generating…" : "Generate Key"}
-                </button>
+              <div style={{ background: "#091322", border: "1px solid #1b2d45", borderRadius: "10px", padding: "16px", marginBottom: "18px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "10px" }}>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+                      <label style={{ display: "block", fontSize: "10px", color: "#8fa3be", margin: 0 }}>API SCOPE</label>
+                      <AiHintTrigger
+                        hintId="hint_scope_selector"
+                        title="Scoped vs Global Keys"
+                        text="Scoped keys restrict access to only a single API category for least-privilege security. Global keys work across all 18 categories."
+                        aiPrompt="What is the difference between scoped and global API keys in APIHub, and which should I use?"
+                        onLearnMore={onLearnMore}
+                        position="bottom"
+                        align="right"
+                      />
+                    </div>
+                    <select
+                      style={{ width: "100%", background: "#050c17", border: "1px solid #223751", color: "#fff", padding: "8px 10px", borderRadius: "7px", fontSize: "11px" }}
+                      value={selectedSlug}
+                      onChange={e => {
+                        setSelectedSlug(e.target.value);
+                        if (e.target.value !== "all") {
+                          const t = apiCatalog.find(a => a.id === e.target.value);
+                          if (t) setName(`${t.name} Key`);
+                        } else {
+                          setName("Global Access Key");
+                        }
+                      }}
+                    >
+                      <option value="all">⚡ All APIs (Full Access - 18 Categories)</option>
+                      {CATEGORIES.map(cat => (
+                        <optgroup key={cat} label={`📂 ${cat}`}>
+                          {apiCatalog.filter(a => a.category === cat).map(api => (
+                            <option key={api.id} value={api.id}>{api.name}</option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label style={{ display: "block", fontSize: "10px", color: "#8fa3be", marginBottom: "4px" }}>KEY NAME / LABEL</label>
+                    <input
+                      style={{ width: "100%", boxSizing: "border-box", background: "#050c17", border: "1px solid #223751", color: "#fff", padding: "8px 10px", borderRadius: "7px", fontSize: "11px" }}
+                      placeholder="e.g. Production Client"
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleCreateKey()}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "12px" }}>
+                  <span style={{ fontSize: "10px", color: "#6e839e" }}>
+                    Scope: <b style={{ color: "#8c9aff" }}>{selectedTarget ? `${selectedTarget.name} (${selectedTarget.category})` : "All APIs (Full Access)"}</b>
+                  </span>
+                  <button className="primaryBtn" onClick={handleCreateKey} disabled={loading} style={{ padding: "8px 16px" }}>
+                    {loading ? "Generating…" : "Generate API Key"}
+                  </button>
+                </div>
               </div>
             )}
 
             {errorMsg && <p className="errorBox" style={{ margin: "0 0 14px" }}>{errorMsg}</p>}
 
-            <h4 style={{ margin: "16px 0 8px", fontSize: "12px", color: "#a9bed8" }}>Active Keys</h4>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "16px 0 8px" }}>
+              <h4 style={{ margin: 0, fontSize: "12px", color: "#a9bed8" }}>Your Active Keys ({keys.length})</h4>
+              <button className="textBtn" style={{ fontSize: "10px", padding: 0 }} onClick={() => { onClose(); navigate("Dashboard"); }}>
+                Open Dashboard →
+              </button>
+            </div>
+
             {keys.length === 0 ? (
-              <p style={{ color: "#62748d", fontSize: "10px" }}>No API keys created yet.</p>
+              <p style={{ color: "#62748d", fontSize: "10px", margin: "12px 0" }}>No API keys created yet. Generate one above to access the APIHub Gateway.</p>
             ) : (
-              <div style={{ maxHeight: "180px", overflowY: "auto" }}>
+              <div style={{ maxHeight: "200px", overflowY: "auto", border: "1px solid #142337", borderRadius: "8px" }}>
                 {keys.map(k => (
-                  <div key={k.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #142337", fontSize: "10px" }}>
-                    <div>
-                      <strong style={{ display: "block", color: "#eef4ff" }}>{k.name}</strong>
-                      <span style={{ color: "#62748d", fontFamily: "monospace" }}>{k.prefix}•••• · {k.status}</span>
+                  <div key={k.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderBottom: "1px solid #142337", fontSize: "10px", background: "#060e19" }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <strong style={{ color: "#eef4ff" }}>{k.name}</strong>
+                        <span style={{ fontSize: "8px", padding: "2px 6px", borderRadius: "4px", background: k.apiSlug === "all" ? "#312e81" : "#132b3f", color: k.apiSlug === "all" ? "#c7d2fe" : "#7dd3fc" }}>
+                          {k.apiSlug === "all" ? "All APIs" : (k.apiName || k.apiSlug)}
+                        </span>
+                      </div>
+                      <span style={{ color: "#62748d", fontFamily: "monospace", fontSize: "9px" }}>
+                        {k.prefix}•••• · {k.usage || 0} reqs · {new Date(k.createdAt).toLocaleDateString()}
+                      </span>
                     </div>
-                    {k.status === "Active" ? (
-                      <button
-                        className="secondaryBtn"
-                        style={{ padding: "4px 8px", fontSize: "8px", color: "var(--danger)", borderColor: "rgba(255, 130, 150, 0.3)" }}
-                        onClick={() => handleRevoke(k.id)}
-                      >
-                        Revoke
-                      </button>
-                    ) : (
-                      <span className="requiresBadge" style={{ fontSize: "8px" }}>Revoked</span>
-                    )}
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      {k.status === "Active" ? (
+                        <>
+                          <span style={{ color: "#4ee2c5", fontSize: "9px", fontWeight: "600" }}>Active</span>
+                          <button
+                            className="secondaryBtn"
+                            style={{ padding: "4px 8px", fontSize: "8px", color: "var(--danger)", borderColor: "rgba(255, 130, 150, 0.3)" }}
+                            onClick={() => handleRevoke(k.id)}
+                          >
+                            Revoke
+                          </button>
+                        </>
+                      ) : (
+                        <span className="requiresBadge" style={{ fontSize: "8px" }}>Revoked</span>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1009,7 +2082,8 @@ function APIDetails({
   userApis = [],
   onDeleteApi,
   showToast,
-  copyToClipboard
+  copyToClipboard,
+  onLearnMore
 }) {
   const catalogApi = (catalogId || apiId) ? apiCatalog.find(c => c.id === (catalogId || apiId)) : null;
   const localApis = userApis.length > 0 ? userApis : readLocal("apihub_apis");
@@ -1102,7 +2176,7 @@ function APIDetails({
   }
 
   const gatewaySlug = isCatalog ? catalogApi.id : (userApi ? userApi.id : "");
-  const gatewayBaseUrl = `${API_BASE_URL}/api/gateway/${gatewaySlug}`;
+  const gatewayBaseUrl = `${getPublicGatewayBaseUrl()}/api/gateway/${gatewaySlug}`;
   const selectedEp = endpoints[selectedEpIndex] || endpoints[0] || {};
   const fullEndpointGatewayUrl = `${gatewayBaseUrl}${selectedEp.path || ""}`;
   const fullEndpointUrlWithParams = appendQueryParams(fullEndpointGatewayUrl, selectedEp.parameters);
@@ -1124,6 +2198,8 @@ function APIDetails({
         currentUser={currentUser}
         navigate={navigate}
         showToast={showToast}
+        defaultApi={api ? { slug: api.id, name: api.name, category: api.category } : null}
+        onLearnMore={onLearnMore}
       />
 
       <div className="pageIntro">
@@ -1300,15 +2376,35 @@ function APIDetails({
             </div>
           )}
 
-          <div style={{ background: "#070e19", border: "1px solid #1c2e46", borderRadius: "10px", padding: "18px", marginBottom: "24px" }}>
+          <div style={{ background: "#070e19", border: "1px solid #1c2e46", borderRadius: "10px", padding: "18px", marginBottom: "20px" }}>
             <h3 style={{ margin: "0 0 8px", fontSize: "14px" }}>Authentication</h3>
             <p style={{ color: "var(--muted)", fontSize: "11px", lineHeight: "1.7", margin: "0 0 12px" }}>
               Authenticate external requests to the APIHub Gateway by passing your APIHub API key in the <code>X-API-Key</code> request header.
             </p>
             <div className="docCode" style={{ margin: "0" }}>
-              <span>REQUEST HEADER FORMAT</span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                <span>REQUEST HEADER FORMAT</span>
+                <button
+                  className="copySnippetBtn"
+                  onClick={() => copyToClipboard ? copyToClipboard("X-API-Key: YOUR_APIHUB_API_KEY", "Header format copied!") : navigator.clipboard?.writeText("X-API-Key: YOUR_APIHUB_API_KEY")}
+                >
+                  Copy Header
+                </button>
+              </div>
               <pre>X-API-Key: YOUR_APIHUB_API_KEY</pre>
             </div>
+          </div>
+
+          <div style={{ background: "rgba(100, 220, 203, 0.06)", border: "1px solid rgba(100, 220, 203, 0.25)", borderRadius: "10px", padding: "16px", marginBottom: "24px" }}>
+            <b style={{ color: "#64dccb", fontSize: "12px", display: "block", marginBottom: "6px" }}>
+              💡 Where to put this API key in your own project:
+            </b>
+            <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "11px", color: "#c8d9ed", lineHeight: "1.8" }}>
+              <li><b>Step 1:</b> Click <b>Get API Key</b> above to generate your secret key (starts with <code>ah_live_...</code>).</li>
+              <li><b>Step 2:</b> In your project root, add it to your <code>.env</code> file: <code>APIHUB_API_KEY=YOUR_APIHUB_API_KEY</code>.</li>
+              <li><b>Step 3:</b> Pass <code>X-API-Key: YOUR_APIHUB_API_KEY</code> in your HTTP request headers (e.g. <code>headers: &#123; "X-API-Key": process.env.APIHUB_API_KEY &#125;</code>).</li>
+              <li><b>Step 4:</b> Send requests directly to the <b>APIHub Gateway Endpoint</b> below. APIHub verifies your key and safely proxies the request.</li>
+            </ul>
           </div>
 
           {/* Section B: Endpoint details & Code Generator */}
@@ -1358,7 +2454,7 @@ function APIDetails({
                   </div>
                   <button
                     className="copySnippetBtn"
-                    onClick={() => copyToClipboard(fullEndpointUrlWithParams, "Endpoint URL copied!")}
+                    onClick={() => copyToClipboard ? copyToClipboard(fullEndpointUrlWithParams, "Endpoint URL copied!") : navigator.clipboard?.writeText(fullEndpointUrlWithParams)}
                   >
                     Copy Endpoint
                   </button>
@@ -1366,14 +2462,30 @@ function APIDetails({
 
                 {selectedEp.parameters && (
                   <div className="docCode" style={{ margin: "14px 0" }}>
-                    <span>QUERY PARAMETERS</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <span>QUERY PARAMETERS</span>
+                      <button
+                        className="copySnippetBtn"
+                        onClick={() => copyToClipboard ? copyToClipboard(selectedEp.parameters, "Query parameters copied!") : navigator.clipboard?.writeText(selectedEp.parameters)}
+                      >
+                        Copy
+                      </button>
+                    </div>
                     <pre>{selectedEp.parameters}</pre>
                   </div>
                 )}
 
                 {epBody && (
                   <div className="docCode" style={{ margin: "14px 0" }}>
-                    <span>REQUEST BODY EXAMPLE</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <span>REQUEST BODY EXAMPLE</span>
+                      <button
+                        className="copySnippetBtn"
+                        onClick={() => copyToClipboard ? copyToClipboard(typeof epBody === "string" ? epBody : JSON.stringify(epBody, null, 2), "Request body copied!") : navigator.clipboard?.writeText(typeof epBody === "string" ? epBody : JSON.stringify(epBody, null, 2))}
+                      >
+                        Copy
+                      </button>
+                    </div>
                     <pre>{typeof epBody === "string" ? epBody : JSON.stringify(epBody, null, 2)}</pre>
                   </div>
                 )}
@@ -1404,7 +2516,7 @@ function APIDetails({
 
                     <button
                       className="copySnippetBtn"
-                      onClick={() => copyToClipboard(currentSnippet, `${codeLang.toUpperCase()} code copied!`)}
+                      onClick={() => copyToClipboard ? copyToClipboard(currentSnippet, `${codeLang.toUpperCase()} code copied!`) : navigator.clipboard?.writeText(currentSnippet)}
                     >
                       Copy Code
                     </button>
@@ -1414,7 +2526,15 @@ function APIDetails({
 
                 {(selectedEp.responseExample || selectedEp.example) && (
                   <div className="docCode" style={{ margin: "14px 0" }}>
-                    <span>EXPECTED RESPONSE EXAMPLE</span>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                      <span>EXPECTED RESPONSE EXAMPLE</span>
+                      <button
+                        className="copySnippetBtn"
+                        onClick={() => copyToClipboard ? copyToClipboard(typeof (selectedEp.responseExample || selectedEp.example) === "string" ? (selectedEp.responseExample || selectedEp.example) : JSON.stringify(selectedEp.responseExample || selectedEp.example, null, 2), "Response example copied!") : navigator.clipboard?.writeText(typeof (selectedEp.responseExample || selectedEp.example) === "string" ? (selectedEp.responseExample || selectedEp.example) : JSON.stringify(selectedEp.responseExample || selectedEp.example, null, 2))}
+                      >
+                        Copy
+                      </button>
+                    </div>
                     <pre>{typeof (selectedEp.responseExample || selectedEp.example) === "string" ? (selectedEp.responseExample || selectedEp.example) : JSON.stringify(selectedEp.responseExample || selectedEp.example, null, 2)}</pre>
                   </div>
                 )}
@@ -1869,18 +2989,732 @@ function CatalogDetails({ api, navigate }) {
   if (!api) return <main className="pageWrap"><div className="emptyState"><p>This catalog API is unavailable.</p><button className="primaryBtn" onClick={()=>navigate("Explore")}>Back to Explore</button></div></main>;
   return <main className="pageWrap"><div className="pageIntro"><div><div className="eyebrow">API LIBRARY</div><h1>{api.name}</h1><p>{api.description}</p></div><button className="secondaryBtn" onClick={()=>navigate("Explore")}>← Back to Explore</button></div><section className="providerTable"><p><b>Category:</b> {api.category}</p><p><b>Authentication:</b> {api.authentication}</p><p><b>Base URL:</b> <code>{api.baseUrl}</code></p><a className="textBtn" href={api.reference} target="_blank" rel="noreferrer">Official documentation ↗</a></section><section className="providerTable"><div className="sectionHead"><div><div className="eyebrow">DOCUMENTED ENDPOINTS</div><h2>{api.endpoints.length} endpoint{api.endpoints.length === 1 ? "" : "s"}</h2></div></div>{api.endpoints.map(endpoint=><article className="docEndpoint" key={`${api.id}-${endpoint.method}-${endpoint.path}`}><div className="endpointTitle"><div><span className={`methodBadge ${endpoint.method.toLowerCase()}`}>{endpoint.method}</span><code>{endpoint.path}</code></div>{api.testable && <button onClick={()=>navigate("Tester",{method:endpoint.method,baseUrl:api.baseUrl,path:endpoint.path,parameters:endpoint.parameters,body:endpoint.body})}>Try API <Icon name="arrow"/></button>}</div><p>{endpoint.name}</p><div className="docCode"><span>EXAMPLE REQUEST</span><pre>{endpoint.exampleRequest}</pre><span>QUERY PARAMETERS</span><pre>{endpoint.parameters || "No query parameters."}</pre><span>EXAMPLE RESPONSE</span><pre>{endpoint.example}</pre></div></article>)}{!api.testable && <div className="docNotice">This API is documented here but not directly testable because it needs credentials or provider-specific setup. APIHub never supplies or stores a key for it.</div>}</section></main>;
 }
-function AccountPage({ navigate, mode, onAuthenticated }) {
-  const signup=mode==="signup"; const [email,setEmail]=useState(""),[password,setPassword]=useState(""),[confirm,setConfirm]=useState(""),[message,setMessage]=useState(""),[loading,setLoading]=useState(false);
-  async function submit(e) { e.preventDefault(); if(!/^\S+@\S+\.\S+$/.test(email)) return setMessage("Enter a valid email address."); if(password.length<8) return setMessage("Password must contain at least 8 characters."); if(signup&&password!==confirm) return setMessage("Passwords do not match."); setLoading(true);setMessage(""); try { const r=await fetch(`${API_BASE_URL}/api/auth/${signup?"signup":"signin"}`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});const data=await r.json();if(!r.ok)throw new Error(data.message);onAuthenticated(data.user);navigate("Dashboard");}catch(error){setMessage(error.message||"Unable to authenticate.");}finally{setLoading(false);} }
-  return <main className="pageWrap"><section className="accountCard"><div className="eyebrow">APIHUB ACCOUNT</div><h1>{signup?"Create account":"Sign in"}</h1><p>Your account and private workspace data are protected by a secure server session.</p><form onSubmit={submit}><div className="formGroup"><label>Email</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@example.com"/></div><div className="formGroup"><label>Password</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="At least 8 characters"/></div>{signup&&<div className="formGroup"><label>Confirm password</label><input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} placeholder="Repeat password"/></div>}{message&&<p className="errorBox">{message}</p>}<button className="primaryBtn" disabled={loading}>{loading?"Working…":signup?"Create account":"Sign in"}</button></form><div className="accountLinks"><button className="textBtn" onClick={()=>navigate(signup?"Sign In":"Sign Up")}>{signup?"Already have an account? Sign in":"Need an account? Sign up"}</button><button className="textBtn" onClick={()=>navigate("Home")}>Back home</button></div></section></main>;
+function AccountPage({ navigate, mode, onAuthenticated, showToast }) {
+  const isSignup = mode === "signup";
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [message, setMessage] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const isEmailValid = /^\S+@\S+\.\S+$/.test(email);
+  const isLengthValid = password.length >= 8;
+  const isMatchValid = confirm.length > 0 && password === confirm;
+
+  useEffect(() => {
+    setMessage("");
+    setSuccessMsg("");
+    setShowPassword(false);
+    setShowConfirm(false);
+  }, [mode]);
+
+  async function submit(e) {
+    e.preventDefault();
+    setMessage("");
+    setSuccessMsg("");
+
+    if (!isEmailValid) {
+      return setMessage("Please enter a valid email address.");
+    }
+    if (!isLengthValid) {
+      return setMessage("Password must contain at least 8 characters.");
+    }
+    if (isSignup && password !== confirm) {
+      return setMessage("Passwords do not match. Please verify your confirm password.");
+    }
+
+    setLoading(true);
+    try {
+      const endpoint = isSignup ? `${API_BASE_URL}/api/auth/signup` : `${API_BASE_URL}/api/auth/signin`;
+      const bodyPayload = isSignup
+        ? { email, password, name: name.trim() || undefined }
+        : { email, password };
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bodyPayload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || (isSignup ? "Unable to create account." : "Invalid email or password."));
+      }
+
+      if (isSignup) {
+        setSuccessMsg(`Welcome to APIHub${name.trim() ? `, ${name.trim()}` : ""}! Account created successfully.`);
+        if (showToast) showToast("Account created successfully!");
+        setTimeout(() => {
+          onAuthenticated(data.user);
+          navigate("Dashboard");
+        }, 900);
+      } else {
+        if (showToast) showToast("Signed in successfully!");
+        onAuthenticated(data.user);
+        navigate("Dashboard");
+      }
+    } catch (error) {
+      setMessage(error.message || "Authentication failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="authContainer">
+      <div className="authCard">
+        <div className="authBadge">
+          <span>◈</span> {isSignup ? "DEVELOPER REGISTRATION" : "AUTHENTICATED ACCESS"}
+        </div>
+        <h1>{isSignup ? "Create Developer Account" : "Sign In to APIHub"}</h1>
+        <p className="authSubtitle">
+          {isSignup
+            ? "Join developers testing, cataloging, and building with the APIHub Gateway."
+            : "Welcome back! Enter your credentials to manage your API keys, saved requests, and custom endpoints."}
+        </p>
+
+        {message && (
+          <div className="authErrorBanner" style={{ marginBottom: "16px" }}>
+            <span>⚠️</span> {message}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="authSuccessBanner" style={{ marginBottom: "16px" }}>
+            <span>✓</span> {successMsg}
+          </div>
+        )}
+
+        <form onSubmit={submit} className="authForm">
+          {isSignup && (
+            <div className="authFormGroup">
+              <label htmlFor="auth-name">Full Name (Optional)</label>
+              <div className="authInputWrap">
+                <input
+                  id="auth-name"
+                  type="text"
+                  className="authInput authInputNoToggle"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  placeholder="e.g. Alex Hunter"
+                  autoComplete="name"
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="authFormGroup">
+            <label htmlFor="auth-email">Email Address</label>
+            <div className="authInputWrap">
+              <input
+                id="auth-email"
+                type="email"
+                className="authInput authInputNoToggle"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="developer@example.com"
+                required
+                autoComplete="email"
+              />
+            </div>
+          </div>
+
+          <div className="authFormGroup">
+            <label htmlFor="auth-pwd">Password</label>
+            <div className="authInputWrap">
+              <input
+                id="auth-pwd"
+                type={showPassword ? "text" : "password"}
+                className="authInput"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder={isSignup ? "At least 8 characters" : "Enter your password"}
+                required
+                autoComplete={isSignup ? "new-password" : "current-password"}
+              />
+              <button
+                type="button"
+                className="authToggleBtn"
+                onClick={() => setShowPassword(v => !v)}
+                title={showPassword ? "Hide password" : "Show password"}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+          </div>
+
+          {isSignup && (
+            <div className="authFormGroup">
+              <label htmlFor="auth-confirm">Confirm Password</label>
+              <div className="authInputWrap">
+                <input
+                  id="auth-confirm"
+                  type={showConfirm ? "text" : "password"}
+                  className="authInput"
+                  value={confirm}
+                  onChange={e => setConfirm(e.target.value)}
+                  placeholder="Re-enter password"
+                  required
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  className="authToggleBtn"
+                  onClick={() => setShowConfirm(v => !v)}
+                  title={showConfirm ? "Hide confirm password" : "Show confirm password"}
+                  aria-label={showConfirm ? "Hide confirm password" : "Show confirm password"}
+                >
+                  {showConfirm ? "Hide" : "Show"}
+                </button>
+              </div>
+
+              <div className="pwdValidationBox">
+                <div className={`valItem ${isLengthValid ? "valid" : (password ? "invalid" : "")}`}>
+                  <span>{isLengthValid ? "✓" : "○"}</span> At least 8 characters
+                </div>
+                {confirm && (
+                  <div className={`valItem ${isMatchValid ? "valid" : "invalid"}`}>
+                    <span>{isMatchValid ? "✓" : "○"}</span> {isMatchValid ? "Passwords match" : "Passwords do not match"}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            className="authSubmitBtn"
+            disabled={loading || !!successMsg}
+          >
+            {loading ? (
+              <span>Working…</span>
+            ) : isSignup ? (
+              <><span>Create Free Account</span> <Icon name="arrow" /></>
+            ) : (
+              <><span>Sign In to Dashboard</span> <Icon name="arrow" /></>
+            )}
+          </button>
+        </form>
+
+        <div className="authFooterLinks">
+          <button
+            type="button"
+            className="authSwitchBtn"
+            onClick={() => navigate(isSignup ? "Sign In" : "Sign Up")}
+          >
+            {isSignup ? "Already have an account?" : "Need an account?"}{" "}
+            <strong>{isSignup ? "Sign In" : "Sign Up free"} →</strong>
+          </button>
+          <button
+            type="button"
+            className="authBackHome"
+            onClick={() => navigate("Home")}
+          >
+            ← Back to Home
+          </button>
+        </div>
+      </div>
+    </main>
+  );
 }
-function Dashboard({ navigate, user, copyToClipboard }) {
-  const [keys,setKeys]=useState([]),[name,setName]=useState(""),[secret,setSecret]=useState(""),[message,setMessage]=useState("");
-  const load=()=>fetch(`${API_BASE_URL}/api/api-keys`,{credentials:"include"}).then(r=>r.json()).then(d=>{if(d.success)setKeys(d.data);else setMessage(d.message);}).catch(()=>setMessage("Unable to load API keys."));
-  useEffect(()=>{if(user)load();},[user]);
-  async function create(){setMessage("");const r=await fetch(`${API_BASE_URL}/api/api-keys`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({name})});const d=await r.json();if(!r.ok)return setMessage(d.message);setSecret(d.secret);setName("");load();}
-  async function revoke(id){const r=await fetch(`${API_BASE_URL}/api/api-keys/${id}/revoke`,{method:"POST",credentials:"include"});if(!r.ok){const d=await r.json();setMessage(d.message);}load();}
-  if(!user)return <main className="pageWrap"><div className="emptyState"><p>Sign in to manage APIHub API keys.</p><button className="primaryBtn" onClick={()=>navigate("Sign In")}>Sign in</button></div></main>;
-  return <main className="pageWrap"><div className="pageIntro"><div><div className="eyebrow">ACCOUNT DASHBOARD</div><h1>Welcome, {user.email}</h1><p>Create APIHub API keys for the documented catalog endpoints and APIHub Gateway.</p></div></div><section className="providerTable"><h2>API keys</h2><p className="docNotice">Keep API keys private. The full secret is shown once, immediately after creation.</p><div className="toolbar"><input value={name} onChange={e=>setName(e.target.value)} placeholder="Key name, e.g. Portfolio app"/><button className="primaryBtn" onClick={create}>Generate key</button></div>{secret&&<div className="successBox" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}><div><b>Copy your new API key now:</b><code style={{ display: "block", marginTop: "4px" }}>{secret}</code></div><button className="secondaryBtn" style={{ padding: "6px 14px", fontSize: "13px" }} onClick={() => copyToClipboard ? copyToClipboard(secret, "API Key copied!") : navigator.clipboard?.writeText(secret)}>Copy Key</button></div>}{message&&<div className="errorBox">{message}</div>}{keys.length?keys.map(key=><div className="apiTableRow" key={key.id}><div className="apiDot">KEY</div><div><b>{key.name}</b><small>{key.prefix}•••• · {key.status} · created {new Date(key.createdAt).toLocaleDateString()}</small></div>{key.status==="Active"?<button className="secondaryBtn" onClick={()=>revoke(key.id)}>Revoke</button>:<span className="requiresBadge">Revoked</span>}</div>):<p>No API keys yet.</p>}</section><section className="providerTable"><h2>Using the APIHub API & Gateway</h2><div className="docCode"><span>AUTHENTICATED GATEWAY REQUEST</span><pre>{`curl -X GET "${API_BASE_URL}/api/gateway/open-meteo/forecast?latitude=40.71&longitude=-74.00" \\\n  -H "X-API-Key: YOUR_APIHUB_KEY"`}</pre></div><p>Default limit: 60 requests/minute per API key. The server may use a different configured limit. Authenticate with header <code>X-API-Key</code> or <code>Authorization: Bearer</code>.</p></section></main>;
+function Dashboard({ navigate, user, showToast, copyToClipboard, onLearnMore }) {
+  const [keys, setKeys] = useState([]);
+  const [name, setName] = useState("");
+  const [selectedSlug, setSelectedSlug] = useState("all");
+  const [secret, setSecret] = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [dashLang, setDashLang] = useState("curl");
+  const [sampleApiSlug, setSampleApiSlug] = useState("open-meteo");
+
+  const load = () => fetch(`${API_BASE_URL}/api/api-keys`, { credentials: "include" })
+    .then(r => r.json())
+    .then(d => { if (d.success) setKeys(d.data); else setMessage(d.message); })
+    .catch(() => setMessage("Unable to load API keys."));
+
+  useEffect(() => { if (user) load(); }, [user]);
+
+  async function create() {
+    setMessage("");
+    setLoading(true);
+    try {
+      const target = selectedSlug === "all" ? null : apiCatalog.find(a => a.id === selectedSlug);
+      const payload = {
+        name: name.trim() || (target ? `${target.name} Key` : "Global Developer Key"),
+        apiSlug: target ? target.id : "all",
+        apiName: target ? target.name : "All APIs (Full Access)",
+        category: target ? target.category : "All Categories"
+      };
+      const r = await fetch(`${API_BASE_URL}/api/api-keys`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        setMessage(d.message || "Failed to create key.");
+        setLoading(false);
+        return;
+      }
+      setSecret(d.secret);
+      setName("");
+      load();
+      if (showToast) showToast("API Key created successfully!");
+    } catch {
+      setMessage("Network error creating key.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function revoke(id) {
+    if (!window.confirm("Are you sure you want to revoke this API key? Requests using it will fail immediately.")) return;
+    const r = await fetch(`${API_BASE_URL}/api/api-keys/${id}/revoke`, {
+      method: "POST",
+      credentials: "include"
+    });
+    if (!r.ok) {
+      const d = await r.json();
+      setMessage(d.message);
+    } else {
+      if (showToast) showToast("API key revoked.");
+    }
+    load();
+  }
+
+  if (!user) return (
+    <main className="pageWrap">
+      <div className="emptyState">
+        <p>Sign in to manage APIHub API keys.</p>
+        <button className="primaryBtn" onClick={() => navigate("Sign In")}>Sign in</button>
+      </div>
+    </main>
+  );
+
+  const sampleApi = apiCatalog.find(a => a.id === sampleApiSlug) || apiCatalog[0];
+  const sampleEp = sampleApi.endpoints?.[0] || { method: "GET", path: "" };
+  const gatewayHost = getPublicGatewayBaseUrl();
+  const sampleUrl = `${gatewayHost}/api/gateway/${sampleApi.id}${sampleEp.path || ""}`;
+  const codeSnippets = {
+    curl: generateCurlCode(sampleEp.method || "GET", sampleUrl, sampleEp.body),
+    javascript: generateJsCode(sampleEp.method || "GET", sampleUrl, sampleEp.body),
+    python: generatePythonCode(sampleEp.method || "GET", sampleUrl, sampleEp.body)
+  };
+
+  const activeKeysCount = keys.filter(k => k.status === "Active").length;
+  const totalRequests = keys.reduce((sum, k) => sum + (k.usage || 0), 0);
+
+  return (
+    <main className="pageWrap">
+      <div className="pageIntro">
+        <div>
+          <div className="eyebrow">DEVELOPER PLATFORM DASHBOARD</div>
+          <h1>Welcome, {formatUserGreetingName(user)}!</h1>
+          <p>Generate, manage, and monitor your APIHub-issued developer API keys across 18 real API categories.</p>
+        </div>
+      </div>
+
+      {/* Metrics Summary Strip */}
+      <div className="dashMetricsGrid">
+        <div className="metricCard">
+          <div className="metricLabel">ACTIVE KEYS</div>
+          <div className="metricVal" style={{ color: "#4ee2c5" }}>{activeKeysCount}</div>
+          <div className="metricSub">of {keys.length} total generated</div>
+        </div>
+        <div className="metricCard">
+          <div className="metricLabel">GATEWAY CALLS</div>
+          <div className="metricVal" style={{ color: "#8c9aff" }}>{totalRequests}</div>
+          <div className="metricSub">processed through APIHub Gateway</div>
+        </div>
+        <div className="metricCard">
+          <div className="metricLabel">SUPPORTED CATEGORIES</div>
+          <div className="metricVal" style={{ color: "#f1bd7c" }}>{CATEGORIES.length}</div>
+          <div className="metricSub">100% verified real upstream APIs</div>
+        </div>
+        <div className="metricCard">
+          <div className="metricLabel">PLATFORM RATE LIMIT</div>
+          <div className="metricVal" style={{ color: "#64dccb" }}>60/min</div>
+          <div className="metricSub">per active API key</div>
+        </div>
+      </div>
+
+      {/* Key Generation Panel */}
+      <section className="providerTable">
+        <div className="sectionHead">
+          <div>
+            <div className="eyebrow">KEY DISTRIBUTION</div>
+            <h2>Generate New API Key</h2>
+          </div>
+        </div>
+        <p className="docNotice">
+          Issue scoped keys for specific APIs (e.g. Weather, Finance, AI) or create a global key with access across all 18 categories.
+        </p>
+
+        <div className="keyGenForm">
+          <div className="formGroup">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "4px" }}>
+              <label style={{ display: "block", fontSize: "10px", color: "#8fa3be", margin: 0 }}>API Scope / Target</label>
+              <AiHintTrigger
+                hintId="hint_dash_scope"
+                title="Key Scoping"
+                text="Scoped keys restrict access to a specific service. Global keys provide access across all 18 categories."
+                aiPrompt="Explain how APIHub API key scopes work and how the gateway enforces tenant isolation."
+                onLearnMore={onLearnMore}
+                position="bottom"
+                align="right"
+              />
+            </div>
+            <select
+              value={selectedSlug}
+              onChange={e => {
+                const val = e.target.value;
+                setSelectedSlug(val);
+                if (val !== "all") {
+                  const t = apiCatalog.find(a => a.id === val);
+                  if (t) setName(`${t.name} Key`);
+                } else {
+                  setName("Global Developer Key");
+                }
+              }}
+            >
+              <option value="all">⚡ All APIs (Full Access - All 18 Categories)</option>
+              {CATEGORIES.map(cat => (
+                <optgroup key={cat} label={`📂 ${cat}`}>
+                  {apiCatalog.filter(a => a.category === cat).map(api => (
+                    <option key={api.id} value={api.id}>{api.name}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+
+          <div className="formGroup">
+            <label style={{ display: "block", fontSize: "10px", color: "#8fa3be", marginBottom: "4px" }}>Key Name / Client</label>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="e.g. Production Weather App"
+              onKeyDown={e => e.key === "Enter" && create()}
+            />
+          </div>
+
+          <div className="formGroup" style={{ alignSelf: "flex-end" }}>
+            <button className="primaryBtn" onClick={create} disabled={loading} style={{ height: "42px", padding: "0 22px" }}>
+              {loading ? "Generating…" : "Generate API Key"}
+            </button>
+          </div>
+        </div>
+
+        {secret && (
+          <div className="successBox" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "12px", background: "rgba(100, 220, 203, 0.12)", border: "1px solid rgba(100, 220, 203, 0.35)", padding: "16px", borderRadius: "10px", margin: "20px 0" }}>
+            <div>
+              <b style={{ color: "#64dccb", display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px", fontSize: "13px" }}>
+                ✓ API Key Created: Copy it now
+              </b>
+              <code style={{ display: "block", marginTop: "4px", fontSize: "13px", wordBreak: "break-all", color: "#fff", fontFamily: "monospace" }}>
+                {secret}
+              </code>
+              <small style={{ color: "#f1bd7c", display: "block", marginTop: "8px", fontSize: "10px" }}>
+                ⚠️ <b>Save this key immediately!</b> APIHub never stores raw keys. This secret cannot be recovered after leaving this page.
+              </small>
+            </div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                className="primaryBtn"
+                style={{ padding: "8px 16px", fontSize: "12px" }}
+                onClick={() => copyToClipboard ? copyToClipboard(secret, "API Key copied to clipboard!") : navigator.clipboard?.writeText(secret)}
+              >
+                Copy API Key
+              </button>
+              <button
+                className="secondaryBtn"
+                style={{ padding: "8px 12px", fontSize: "12px" }}
+                onClick={() => setSecret("")}
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        )}
+
+        {message && <div className="errorBox" style={{ margin: "14px 0" }}>{message}</div>}
+      </section>
+
+      {/* "My API Keys" Table */}
+      <section className="providerTable">
+        <div className="sectionHead">
+          <div>
+            <div className="eyebrow">DEVELOPER ACCESS</div>
+            <h2>My API Keys ({keys.length})</h2>
+          </div>
+          <span style={{ fontSize: "11px", color: "#687c96" }}>
+            {activeKeysCount} Active · {keys.length - activeKeysCount} Revoked
+          </span>
+        </div>
+
+        {keys.length === 0 ? (
+          <div className="emptyState" style={{ margin: "16px 0", padding: "36px" }}>
+            <p style={{ color: "#a8bad0" }}>No API keys yet.</p>
+            <p style={{ fontSize: "11px", color: "#607289", margin: "4px 0 14px" }}>Generate your first key above to start making authenticated calls to the APIHub Gateway.</p>
+          </div>
+        ) : (
+          <div className="keyTableWrap">
+            <table className="keysTable">
+              <thead>
+                <tr>
+                  <th>API Scope</th>
+                  <th>Category</th>
+                  <th>Key Name & Prefix</th>
+                  <th>Usage</th>
+                  <th>Created</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: "right" }}>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {keys.map(k => (
+                  <tr key={k.id}>
+                    <td>
+                      <div style={{ fontWeight: 600, color: "#f0f5ff" }}>
+                        {k.apiSlug === "all" ? "⚡ All APIs (Full Access)" : (k.apiName || k.apiSlug)}
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`categoryPill ${k.apiSlug === "all" ? "globalPill" : ""}`}>
+                        {k.category || (k.apiSlug === "all" ? "All Categories" : "General")}
+                      </span>
+                    </td>
+                    <td>
+                      <div style={{ color: "#d1def0", fontWeight: 500 }}>{k.name}</div>
+                      <code style={{ fontSize: "10px", color: "#71859f" }}>{k.prefix}••••</code>
+                    </td>
+                    <td>
+                      <span className="usageBadge">{k.usage || 0} reqs</span>
+                    </td>
+                    <td style={{ fontSize: "11px", color: "#8fa3bd" }}>
+                      {new Date(k.createdAt).toLocaleDateString()}
+                    </td>
+                    <td>
+                      <span className={k.status === "Active" ? "statusActive" : "statusRevoked"}>
+                        {k.status}
+                      </span>
+                    </td>
+                    <td style={{ textAlign: "right" }}>
+                      <div style={{ display: "inline-flex", gap: "6px" }}>
+                        <button
+                          className="actionBtn"
+                          title="Copy Prefix"
+                          onClick={() => copyToClipboard ? copyToClipboard(k.prefix, "Key prefix copied!") : navigator.clipboard?.writeText(k.prefix)}
+                        >
+                          Copy
+                        </button>
+                        {k.status === "Active" && (
+                          <button
+                            className="actionBtn danger"
+                            onClick={() => revoke(k.id)}
+                          >
+                            Revoke
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* Developer Quickstart & Code Generator */}
+      <section className="providerTable">
+        <div className="sectionHead">
+          <div>
+            <div className="eyebrow">INTEGRATION GUIDE</div>
+            <h2>Connect Your Project to the Gateway</h2>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "11px", color: "#8fa3be" }}>API Preview:</span>
+            <select
+              style={{ background: "#050c17", border: "1px solid #223751", color: "#fff", padding: "6px 10px", borderRadius: "6px", fontSize: "11px" }}
+              value={sampleApiSlug}
+              onChange={e => setSampleApiSlug(e.target.value)}
+            >
+              {apiCatalog.map(a => (
+                <option key={a.id} value={a.id}>[{a.category}] {a.name}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        <p style={{ color: "var(--muted)", fontSize: "12px", lineHeight: "1.6" }}>
+          All requests are routed through the APIHub Gateway using your <code>X-API-Key: ah_live_...</code>.
+        </p>
+
+        <div style={{ background: "rgba(100, 220, 203, 0.06)", border: "1px solid rgba(100, 220, 203, 0.25)", borderRadius: "10px", padding: "16px", margin: "16px 0" }}>
+          <b style={{ color: "#64dccb", fontSize: "12px", display: "block", marginBottom: "6px" }}>
+            💡 Where to put your API key in your project:
+          </b>
+          <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "11px", color: "#c8d9ed", lineHeight: "1.8" }}>
+            <li>Store the key in your project's <code>.env</code> file: <code>APIHUB_API_KEY=YOUR_APIHUB_API_KEY</code></li>
+            <li>Add the <code>X-API-Key</code> header to your API requests to <code>{getPublicGatewayBaseUrl()}/api/gateway/{sampleApi.id}...</code></li>
+            <li>Never commit your API key to public source code or Git repositories.</li>
+          </ul>
+        </div>
+
+        <div style={{ display: "flex", gap: "8px", margin: "16px 0 10px" }}>
+          {[
+            { id: "curl", label: "cURL" },
+            { id: "javascript", label: "JavaScript (Fetch)" },
+            { id: "python", label: "Python (requests)" }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              className={`filter ${dashLang === tab.id ? "active" : ""}`}
+              onClick={() => setDashLang(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="docCode" style={{ margin: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+            <span>SAMPLE REQUEST ({dashLang.toUpperCase()}) — {sampleApi.name}</span>
+            <button
+              className="copySnippetBtn"
+              onClick={() => copyToClipboard ? copyToClipboard(codeSnippets[dashLang], `${dashLang.toUpperCase()} code copied!`) : navigator.clipboard?.writeText(codeSnippets[dashLang])}
+            >
+              Copy Code
+            </button>
+          </div>
+          <pre style={{ overflowX: "auto" }}>{codeSnippets[dashLang]}</pre>
+        </div>
+      </section>
+    </main>
+  );
 }
-function Privacy({ navigate }) { return <main className="pageWrap"><div className="pageIntro"><div><div className="eyebrow">APIHUB</div><h1>Privacy</h1><p>Phase 1 stores API definitions and saved requests in this browser's local storage. Tester requests pass through the configured APIHub backend proxy. Do not enter private credentials or sensitive data in this development build.</p></div><button className="secondaryBtn" onClick={()=>navigate("Home")}>← Back home</button></div></main>; }
+function Footer({ navigate, currentUser, signOut }) {
+  return (
+    <footer className="globalFooter">
+      <div className="footerInner">
+        <div className="footerTopGrid">
+          <div className="footerBrandCol">
+            <button className="footerBrand" onClick={() => navigate("Home")}>
+              <div className="logoMark"><span>API</span></div>
+              <div>
+                <strong>APIHub</strong>
+                <small>API MANAGEMENT & DEVELOPER PLATFORM</small>
+              </div>
+            </button>
+            <p className="footerDesc">
+              Discover, document, test, and authenticate APIs in one unified workspace. Connect your applications directly to the high-performance APIHub Gateway with secure SHA-256 API keys.
+            </p>
+            <div className="footerOwnerBadge">
+              <span className="ownerDot" /> Platform Architect & Owner: <strong>Avdesh Gurjar</strong>
+            </div>
+            <p className="footerBio">
+              Avdesh Gurjar is a full-stack engineer and API architect focused on high-performance developer tooling, distributed gateway systems, and seamless developer experience.
+            </p>
+          </div>
+
+          <div className="footerNavCol">
+            <h4>Platform</h4>
+            <ul>
+              <li><button onClick={() => navigate("APIs")}>API Catalog</button></li>
+              <li><button onClick={() => navigate("Tester")}>API Tester</button></li>
+              <li><button onClick={() => navigate("Documentation")}>Documentation</button></li>
+              <li><button onClick={() => navigate("Explore")}>Explore Marketplace</button></li>
+              <li><button onClick={() => navigate("Learn")}>Learning Center</button></li>
+            </ul>
+          </div>
+
+          <div className="footerNavCol">
+            <h4>Developer Access</h4>
+            <ul>
+              {currentUser ? (
+                <>
+                  <li><button onClick={() => navigate("Dashboard")}>Account Dashboard</button></li>
+                  <li><button onClick={() => navigate("Create API")}>Publish Custom API</button></li>
+                  <li><button onClick={() => navigate("History")}>Request History</button></li>
+                  <li><button onClick={signOut}>Sign Out ({currentUser.email})</button></li>
+                </>
+              ) : (
+                <>
+                  <li><button onClick={() => navigate("Sign In")}>Sign In</button></li>
+                  <li><button onClick={() => navigate("Sign Up")}>Create Free Account</button></li>
+                  <li><button onClick={() => navigate("Documentation")}>Gateway Auth (X-API-Key)</button></li>
+                </>
+              )}
+              <li><button onClick={() => navigate("Privacy")}>Privacy & Security</button></li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="footerDivider" />
+
+        <div className="footerBottomBar">
+          <div>© 2026 APIHub. All rights reserved.</div>
+          <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
+            <span className="gatewayStatusPill">
+              <span /> Gateway Live · 60 req/min
+            </span>
+            <span>Built by Avdesh Gurjar</span>
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+function Privacy({ navigate }) {
+  return (
+    <main className="pageWrap">
+      <div className="pageIntro">
+        <div>
+          <div className="eyebrow">APIHUB SECURITY & PRIVACY</div>
+          <h1>Privacy & Security Architecture</h1>
+          <p>
+            APIHub is architected with developer security, data isolation, and API key protection at its foundation.
+          </p>
+        </div>
+        <button className="secondaryBtn" onClick={() => navigate("Home")}>
+          ← Back home
+        </button>
+      </div>
+
+      <section className="providerTable">
+        <h2>Security & Data Protection Standards</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "18px", marginTop: "18px" }}>
+          <div style={{ background: "#060c16", border: "1px solid #1a2a40", borderRadius: "12px", padding: "18px" }}>
+            <h3 style={{ fontSize: "14px", margin: "0 0 8px", color: "#64dccb" }}>🔒 Cryptographic Key Hashing</h3>
+            <p style={{ color: "#8b9db5", fontSize: "11px", lineHeight: "1.7", margin: 0 }}>
+              APIHub API keys are generated using 32 bytes of cryptographically secure random entropy. PostgreSQL only stores the 64-character SHA-256 hash. Raw keys are never stored in databases, logs, or localStorage.
+            </p>
+          </div>
+
+          <div style={{ background: "#060c16", border: "1px solid #1a2a40", borderRadius: "12px", padding: "18px" }}>
+            <h3 style={{ fontSize: "14px", margin: "0 0 8px", color: "#6f7eff" }}>🛡️ Secure Session Cookies</h3>
+            <p style={{ color: "#8b9db5", fontSize: "11px", lineHeight: "1.7", margin: 0 }}>
+              User authentication uses HTTP-only JSON Web Token cookies signed with HMAC-SHA256. Tokens cannot be accessed by client-side JavaScript, guarding against XSS token leakage.
+            </p>
+          </div>
+
+          <div style={{ background: "#060c16", border: "1px solid #1a2a40", borderRadius: "12px", padding: "18px" }}>
+            <h3 style={{ fontSize: "14px", margin: "0 0 8px", color: "#5fe0bc" }}>⚡ Gateway Proxy Protection</h3>
+            <p style={{ color: "#8b9db5", fontSize: "11px", lineHeight: "1.7", margin: 0 }}>
+              All gateway requests are rate-limited (60 requests/minute default) and proxied server-side. Upstream credentials remain strictly on the backend, ensuring zero credential exposure to clients.
+            </p>
+          </div>
+        </div>
+      </section>
+    </main>
+  );
+}

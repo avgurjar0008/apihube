@@ -10,6 +10,8 @@ import userApisRouter from "./routes/user-apis.routes.js";
 import userEndpointsRouter from "./routes/user-endpoints.routes.js";
 import libraryRouter from "./routes/library.routes.js";
 import gatewayRouter from "./routes/gateway.routes.js";
+import savedRequestsRouter from "./routes/saved-requests.routes.js";
+import aiRouter from "./routes/ai.routes.js";
 import { requireDatabase } from "./db.js";
 
 const app = express();
@@ -27,10 +29,12 @@ app.use(cookieParser());
 
 app.use("/api/health", healthRouter);
 app.use("/api/requests", requestRouter);
+app.use("/api/ai", aiRouter);
 app.use("/api/auth", requireDatabase, authRouter);
 app.use("/api/api-keys", requireDatabase, keysRouter);
 app.use("/api/my-apis", requireDatabase, userApisRouter);
 app.use("/api/my-apis", requireDatabase, userEndpointsRouter);
+app.use("/api/saved-requests", requireDatabase, savedRequestsRouter);
 app.use("/api/gateway", requireDatabase, gatewayRouter);
 app.use("/api/v1", requireDatabase, libraryRouter);
 

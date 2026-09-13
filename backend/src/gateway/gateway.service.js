@@ -15,7 +15,8 @@ const BLOCKED_CLIENT_HEADERS = new Set([
   "connection",
   "keep-alive",
   "transfer-encoding",
-  "content-length"
+  "content-length",
+  "accept-encoding"
 ]);
 
 /**
@@ -101,19 +102,46 @@ function sanitizeClientHeaders(headers = {}) {
 }
 
 /**
- * Safely join baseUrl and subPath avoiding duplicate slashes
+ * Safely join baseUrl and subPath avoiding duplicate slashes, with primary endpoint fallback and deduplication
  */
-function buildTargetUrl(baseUrl, subPath, search = "") {
-  const cleanBase = (baseUrl || "").trim().replace(/\/+$/, "");
-  const cleanPath = (subPath || "").trim().replace(/^\/+/, "");
+function buildTargetUrl(baseUrl, subPath, search = "", primaryEndpoint = null) {
+  let cleanBase = (baseUrl || "").trim().replace(/\/+$/, "");
+  let cleanPath = (subPath || "").trim().replace(/^\/+/, "");
+
+  let usedDefaultParams = false;
+  // If subPath is empty, automatically fallback to primary endpoint path
+  if (!cleanPath && primaryEndpoint?.path) {
+    cleanPath = primaryEndpoint.path.trim().replace(/^\/+/, "");
+    usedDefaultParams = true;
+  }
+
+  // Deduplicate if cleanPath starts with base pathname segment (e.g. /api/v3 or /v1)
+  try {
+    const baseObj = new URL(cleanBase);
+    const basePath = baseObj.pathname.replace(/^\/+/, "").replace(/\/+$/, "");
+    if (basePath && (cleanPath === basePath || cleanPath.startsWith(basePath + "/"))) {
+      cleanPath = cleanPath.slice(basePath.length).replace(/^\/+/, "");
+    }
+  } catch {}
+
   const full = cleanPath ? `${cleanBase}/${cleanPath}` : cleanBase;
   const urlObj = new URL(full);
+
   if (search) {
     const searchParams = new URLSearchParams(search);
     for (const [k, v] of searchParams.entries()) {
       urlObj.searchParams.set(k, v);
     }
+  } else if (usedDefaultParams && primaryEndpoint?.parameters) {
+    const lines = primaryEndpoint.parameters.split("\n").map(l => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      const [k, ...rest] = line.split("=");
+      if (k && !urlObj.searchParams.has(k.trim())) {
+        urlObj.searchParams.set(k.trim(), rest.join("=").trim());
+      }
+    }
   }
+
   return urlObj;
 }
 
@@ -177,8 +205,17 @@ export async function forwardGatewayRequest({
   // 1. Resolve API & verify tenant authorization
   const apiMeta = await resolveApi(apiSlug, userId);
 
+  // 1b. Multi-API Key Scope Enforcement:
+  // If the key is scoped to a specific API (api_slug !== 'all'), ensure it matches the requested API slug
+  if (apiKey?.api_slug && apiKey.api_slug !== "all" && apiKey.api_slug.toLowerCase() !== apiMeta.slug.toLowerCase()) {
+    const err = new Error(`Permission Denied: This API key is restricted to '${apiKey.api_name || apiKey.api_slug}'. It cannot access '${apiMeta.name || apiSlug}'.`);
+    err.status = 403;
+    err.code = "API_KEY_SCOPE_MISMATCH";
+    throw err;
+  }
+
   // 2. Build target URL
-  const targetUrl = buildTargetUrl(apiMeta.baseUrl, subPath, search);
+  const targetUrl = buildTargetUrl(apiMeta.baseUrl, subPath, search, apiMeta.endpoints?.[0]);
   validateUrlSafety(targetUrl);
 
   // 3. Filter client headers
@@ -251,11 +288,18 @@ export async function forwardGatewayRequest({
     // Keep as text if not JSON
   }
 
-  // 8. Filter Upstream Response Headers
+  // 8. Filter Upstream Response Headers (exclude hop-by-hop and encoding headers since body is already decoded)
   const safeResponseHeaders = {};
   for (const [k, v] of upstreamResponse.headers.entries()) {
     const lower = k.toLowerCase();
-    if (!["set-cookie", "server", "transfer-encoding", "connection"].includes(lower)) {
+    if (![
+      "set-cookie",
+      "server",
+      "transfer-encoding",
+      "connection",
+      "content-encoding",
+      "content-length"
+    ].includes(lower)) {
       safeResponseHeaders[k] = v;
     }
   }

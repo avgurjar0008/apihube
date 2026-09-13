@@ -43,7 +43,7 @@ router.get("/docs/:apiSlug", async (req, res) => {
           method: e.method,
           gatewayPath: `/api/gateway/${meta.slug}${e.path}`,
           parameters: e.parameters,
-          exampleRequest: `curl -H "X-API-Key: ${req.apiKey.id ? "ah_live_..." : ""}" "${req.protocol}://${req.get("host")}/api/gateway/${meta.slug}${e.path}"`,
+          exampleRequest: `curl -H "X-API-Key: YOUR_APIHUB_API_KEY" "${req.protocol}://${req.get("host")}/api/gateway/${meta.slug}${e.path}"`,
           exampleResponse: e.example
         }))
       }
