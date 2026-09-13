@@ -3,7 +3,19 @@ import crypto from "crypto";
 import { database } from "../db.js";
 
 const secret = () => process.env.JWT_SECRET;
-export function sessionCookie(res, token) { res.cookie("apihub_session", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: process.env.COOKIE_SAME_SITE || "lax", maxAge: 7 * 24 * 60 * 60 * 1000, path: "/" }); }
+
+export function sessionCookie(res, token) {
+  const isProd = process.env.NODE_ENV === "production";
+  const sameSite = process.env.COOKIE_SAME_SITE || (isProd ? "none" : "lax");
+  const secure = isProd ? true : (sameSite === "none");
+  res.cookie("apihub_session", token, {
+    httpOnly: true,
+    secure,
+    sameSite,
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+    path: "/"
+  });
+}
 export function requireUser(req, res, next) {
   if (!secret()) return res.status(503).json({ success: false, message: "Authentication is not configured." });
   const token = req.cookies?.apihub_session || req.headers.authorization?.replace(/^Bearer\s+/i, "");

@@ -16,6 +16,34 @@ export function getPublicGatewayBaseUrl() {
   }
   return API_BASE_URL;
 }
+
+export function getAuthToken() {
+  if (typeof localStorage !== "undefined") {
+    return localStorage.getItem("apihub_token") || "";
+  }
+  return "";
+}
+
+export function setAuthToken(token) {
+  if (typeof localStorage !== "undefined") {
+    if (token) localStorage.setItem("apihub_token", token);
+    else localStorage.removeItem("apihub_token");
+  }
+}
+
+export function authFetch(url, options = {}) {
+  const token = getAuthToken();
+  const headers = { ...(options.headers || {}) };
+  if (token && !headers["Authorization"] && !headers["authorization"]) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return fetch(url, {
+    ...options,
+    credentials: "include",
+    headers
+  });
+}
+
 function readLocal(key) { try { const value=JSON.parse(localStorage.getItem(key)||"[]"); return Array.isArray(value)?value:[]; } catch { return []; } }
 function writeLocal(key,value) { localStorage.setItem(key,JSON.stringify(value)); }
 
@@ -351,10 +379,20 @@ export default function App() {
   }
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/api/auth/me`, { credentials: "include" })
+    authFetch(`${API_BASE_URL}/api/auth/me`)
       .then(r => r.ok ? r.json() : null)
-      .then(data => setCurrentUser(data?.user || null))
-      .catch(() => {});
+      .then(data => {
+        if (data?.user) {
+          setCurrentUser(data.user);
+        } else {
+          setCurrentUser(null);
+          setAuthToken("");
+        }
+      })
+      .catch(() => {
+        setCurrentUser(null);
+        setAuthToken("");
+      });
   }, []);
 
   useEffect(() => {
@@ -383,7 +421,7 @@ export default function App() {
 
   useEffect(() => {
     if (currentUser) {
-      fetch(`${API_BASE_URL}/api/my-apis`, { credentials: "include" })
+      authFetch(`${API_BASE_URL}/api/my-apis`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data?.success && Array.isArray(data.data)) {
@@ -393,7 +431,7 @@ export default function App() {
         })
         .catch(() => {});
 
-      fetch(`${API_BASE_URL}/api/saved-requests`, { credentials: "include" })
+      authFetch(`${API_BASE_URL}/api/saved-requests`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data?.success && Array.isArray(data.data)) {
@@ -403,7 +441,7 @@ export default function App() {
         })
         .catch(() => {});
 
-      fetch(`${API_BASE_URL}/api/requests/history`, { credentials: "include" })
+      authFetch(`${API_BASE_URL}/api/requests/history`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data?.success && Array.isArray(data.data)) {
@@ -419,7 +457,10 @@ export default function App() {
   }, [currentUser]);
 
   async function signOut() {
-    await fetch(`${API_BASE_URL}/api/auth/signout`, { method: "POST", credentials: "include" });
+    try {
+      await authFetch(`${API_BASE_URL}/api/auth/signout`, { method: "POST" });
+    } catch {}
+    setAuthToken("");
     setCurrentUser(null);
     setUserApis(readLocal("apihub_apis"));
     setUserEndpoints(readLocal("apihub_endpoints"));
@@ -431,9 +472,8 @@ export default function App() {
 
     if (currentUser) {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/my-apis/${idToDelete}`, {
-          method: "DELETE",
-          credentials: "include"
+        const res = await authFetch(`${API_BASE_URL}/api/my-apis/${idToDelete}`, {
+          method: "DELETE"
         });
         const d = await res.json();
         if (!res.ok) {
@@ -589,7 +629,7 @@ export default function App() {
     setLoading(true); setError(""); setResponse(null);
     try {
       const finalUrl = buildUrl();
-      const r = await fetch(`${API_BASE_URL}/api/requests/execute`, {
+      const r = await authFetch(`${API_BASE_URL}/api/requests/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ method, url: finalUrl, headers: parseHeaders(headers), body })
@@ -613,9 +653,8 @@ export default function App() {
 
     if (currentUser) {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/saved-requests`, {
+        const res = await authFetch(`${API_BASE_URL}/api/saved-requests`, {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(newReq)
         });
@@ -646,9 +685,8 @@ export default function App() {
     const itemToDelete = savedRequests[index];
     if (currentUser && itemToDelete?.id) {
       try {
-        await fetch(`${API_BASE_URL}/api/saved-requests/${itemToDelete.id}`, {
-          method: "DELETE",
-          credentials: "include"
+        await authFetch(`${API_BASE_URL}/api/saved-requests/${itemToDelete.id}`, {
+          method: "DELETE"
         });
       } catch {
         // Fallback
@@ -665,9 +703,8 @@ export default function App() {
     if (!window.confirm("Clear all saved requests? This cannot be undone.")) return;
     if (currentUser) {
       try {
-        await fetch(`${API_BASE_URL}/api/saved-requests`, {
-          method: "DELETE",
-          credentials: "include"
+        await authFetch(`${API_BASE_URL}/api/saved-requests`, {
+          method: "DELETE"
         });
       } catch {
         // Fallback
@@ -1833,7 +1870,7 @@ function ApiKeyModal({ isOpen, onClose, currentUser, navigate, showToast, defaul
 
   const loadKeys = () => {
     if (!currentUser) return;
-    fetch(`${API_BASE_URL}/api/api-keys`, { credentials: "include" })
+    authFetch(`${API_BASE_URL}/api/api-keys`)
       .then(r => r.ok ? r.json() : null)
       .then(d => { if (d?.success && Array.isArray(d.data)) setKeys(d.data); })
       .catch(() => {});
@@ -1868,9 +1905,8 @@ function ApiKeyModal({ isOpen, onClose, currentUser, navigate, showToast, defaul
         category: target ? target.category : "All Categories"
       };
 
-      const res = await fetch(`${API_BASE_URL}/api/api-keys`, {
+      const res = await authFetch(`${API_BASE_URL}/api/api-keys`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
@@ -1894,9 +1930,8 @@ function ApiKeyModal({ isOpen, onClose, currentUser, navigate, showToast, defaul
   async function handleRevoke(keyId) {
     if (!window.confirm("Revoke this API key? Requests using it will fail immediately.")) return;
     try {
-      await fetch(`${API_BASE_URL}/api/api-keys/${keyId}/revoke`, {
-        method: "POST",
-        credentials: "include"
+      await authFetch(`${API_BASE_URL}/api/api-keys/${keyId}/revoke`, {
+        method: "POST"
       });
       loadKeys();
       if (showToast) showToast("API key revoked.");
@@ -2105,7 +2140,7 @@ function APIDetails({
 
   useEffect(() => {
     if (!isCatalog && currentUser && apiId) {
-      fetch(`${API_BASE_URL}/api/my-apis/${apiId}/endpoints`, { credentials: "include" })
+      authFetch(`${API_BASE_URL}/api/my-apis/${apiId}/endpoints`)
         .then(r => r.ok ? r.json() : null)
         .then(data => {
           if (data?.success && Array.isArray(data.data)) {
@@ -2143,9 +2178,8 @@ function APIDetails({
     if (!window.confirm("Delete this endpoint?")) return;
     if (currentUser && apiId) {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/my-apis/${apiId}/endpoints/${endpointId}`, {
-          method: "DELETE",
-          credentials: "include"
+        const res = await authFetch(`${API_BASE_URL}/api/my-apis/${apiId}/endpoints/${endpointId}`, {
+          method: "DELETE"
         });
         const d = await res.json();
         if (!res.ok) {
@@ -2647,9 +2681,8 @@ function CreateAPI({ navigate, currentUser, onApiCreated }) {
 
     if (currentUser) {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/my-apis`, {
+        const res = await authFetch(`${API_BASE_URL}/api/my-apis`, {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(newApi)
         });
@@ -2798,9 +2831,8 @@ function CreateEndpoint({ navigate, apiId, currentUser, userApis = [], onEndpoin
 
     if (currentUser) {
       try {
-        const res = await fetch(`${API_BASE_URL}/api/my-apis/${parentApi.id}/endpoints`, {
+        const res = await authFetch(`${API_BASE_URL}/api/my-apis/${parentApi.id}/endpoints`, {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(endpoint)
         });
@@ -3046,6 +3078,10 @@ function AccountPage({ navigate, mode, onAuthenticated, showToast }) {
         throw new Error(data.message || (isSignup ? "Unable to create account." : "Invalid email or password."));
       }
 
+      if (data.token) {
+        setAuthToken(data.token);
+      }
+
       if (isSignup) {
         setSuccessMsg(`Welcome to APIHub${name.trim() ? `, ${name.trim()}` : ""}! Account created successfully.`);
         if (showToast) showToast("Account created successfully!");
@@ -3233,7 +3269,7 @@ function Dashboard({ navigate, user, showToast, copyToClipboard, onLearnMore }) 
   const [dashLang, setDashLang] = useState("curl");
   const [sampleApiSlug, setSampleApiSlug] = useState("open-meteo");
 
-  const load = () => fetch(`${API_BASE_URL}/api/api-keys`, { credentials: "include" })
+  const load = () => authFetch(`${API_BASE_URL}/api/api-keys`)
     .then(r => r.json())
     .then(d => { if (d.success) setKeys(d.data); else setMessage(d.message); })
     .catch(() => setMessage("Unable to load API keys."));
@@ -3251,9 +3287,8 @@ function Dashboard({ navigate, user, showToast, copyToClipboard, onLearnMore }) 
         apiName: target ? target.name : "All APIs (Full Access)",
         category: target ? target.category : "All Categories"
       };
-      const r = await fetch(`${API_BASE_URL}/api/api-keys`, {
+      const r = await authFetch(`${API_BASE_URL}/api/api-keys`, {
         method: "POST",
-        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
@@ -3276,9 +3311,8 @@ function Dashboard({ navigate, user, showToast, copyToClipboard, onLearnMore }) 
 
   async function revoke(id) {
     if (!window.confirm("Are you sure you want to revoke this API key? Requests using it will fail immediately.")) return;
-    const r = await fetch(`${API_BASE_URL}/api/api-keys/${id}/revoke`, {
-      method: "POST",
-      credentials: "include"
+    const r = await authFetch(`${API_BASE_URL}/api/api-keys/${id}/revoke`, {
+      method: "POST"
     });
     if (!r.ok) {
       const d = await r.json();

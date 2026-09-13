@@ -19,8 +19,9 @@ router.post("/signup", async (req,res) => {
   try {
     const user={id:crypto.randomUUID(),email,passwordHash:await bcrypt.hash(password,12),name:name||null};
     const r=await database().query("INSERT INTO users(id,email,password_hash,name) VALUES($1,$2,$3,$4) RETURNING id,email,name,created_at",[user.id,user.email,user.passwordHash,user.name]);
-    sessionCookie(res,jwt.sign({sub:user.id},process.env.JWT_SECRET,{expiresIn:"7d"}));
-    res.status(201).json({success:true,user:profile(r.rows[0])});
+    const token = jwt.sign({sub:user.id},process.env.JWT_SECRET,{expiresIn:"7d"});
+    sessionCookie(res, token);
+    res.status(201).json({success:true,user:profile(r.rows[0]),token});
   } catch(e){
     console.error("[Auth Signup Error]:", e.message);
     let msg = "Unable to create account.";
@@ -41,13 +42,20 @@ router.post("/signin", async (req,res) => {
   try {
     const r=await database().query("SELECT id,email,name,password_hash,created_at FROM users WHERE email=$1",[email]);
     if(!r.rowCount||!await bcrypt.compare(password,r.rows[0].password_hash)) return res.status(401).json({success:false,message:"Invalid email or password."});
-    sessionCookie(res,jwt.sign({sub:r.rows[0].id},process.env.JWT_SECRET,{expiresIn:"7d"}));
-    res.json({success:true,user:profile(r.rows[0])});
+    const token = jwt.sign({sub:r.rows[0].id},process.env.JWT_SECRET,{expiresIn:"7d"});
+    sessionCookie(res, token);
+    res.json({success:true,user:profile(r.rows[0]),token});
   } catch(e) {
     console.error("[Auth Signin Error]:", e.message);
     res.status(500).json({success:false,message:"Database error: " + (process.env.DATABASE_URL?.includes("YOUR_PROJECT_REF") ? "Please set your real Supabase connection string in backend/.env" : e.message)});
   }
 });
-router.post("/signout", (req,res)=>{res.clearCookie("apihub_session",{path:"/"});res.json({success:true});});
+router.post("/signout", (req,res)=>{
+  const isProd = process.env.NODE_ENV === "production";
+  const sameSite = process.env.COOKIE_SAME_SITE || (isProd ? "none" : "lax");
+  const secure = isProd ? true : (sameSite === "none");
+  res.clearCookie("apihub_session", { path: "/", httpOnly: true, secure, sameSite });
+  res.json({success:true});
+});
 router.get("/me",requireUser,async(req,res)=>{const r=await database().query("SELECT id,email,name,created_at FROM users WHERE id=$1",[req.user.sub]); if(!r.rowCount)return res.status(401).json({success:false,message:"Session is invalid."});res.json({success:true,user:profile(r.rows[0])});});
 export default router;
