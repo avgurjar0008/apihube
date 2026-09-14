@@ -4,7 +4,12 @@
  * and live deployed Vercel frontend (https://apihube.vercel.app)
  */
 
-import "dotenv/config";
+import dotenv from "dotenv";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 const BACKEND_URL = "https://apihub-1-i6r7.onrender.com";
 const FRONTEND_URL = "https://apihube.vercel.app";
@@ -252,12 +257,62 @@ async function runProductionSmokeTests() {
   assert(revokedData.success === false, "Revoked call success is false");
   console.log(`    Revoked response: ${revokedData.message}`);
 
-  // 9. Clean up production test account
-  console.log("\n[16] Cleaning up test user and keys from Supabase...");
+  // 8b. Public User Reviews & Ratings Verification
+  console.log("\n[16] Testing Public Production Reviews (/api/reviews)...");
+  const prodReviewsGetRes = await fetch(`${BACKEND_URL}/api/reviews`);
+  assert(prodReviewsGetRes.ok, `GET /api/reviews returned status ${prodReviewsGetRes.status}`);
+  const prodReviewsGetData = await prodReviewsGetRes.json();
+  assert(prodReviewsGetData.success === true, "Reviews GET success is true");
+  assert(prodReviewsGetData.summary !== undefined, "Summary metrics object present");
+  assert(Array.isArray(prodReviewsGetData.reviews), "Reviews list is an array");
+  console.log(`    Live Production Reviews in DB: ${prodReviewsGetData.summary.totalReviews}`);
+
+  console.log("\n[17] Testing Unauthenticated Review Submission (Expect 401 Unauthorized)...");
+  const prodUnauthReviewRes = await fetch(`${BACKEND_URL}/api/reviews`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ rating: 5, review: "Unauthenticated review attempt", feature: "API Gateway" })
+  });
+  assert(prodUnauthReviewRes.status === 401, `Unauthenticated review rejected with 401 (got ${prodUnauthReviewRes.status})`);
+
+  console.log("\n[18] Submitting Authenticated Production Review...");
+  const prodReviewText = "APIHub's gateway proxy delivers sub-100ms response times with clean token isolation. Exceptional developer tooling.";
+  const prodAuthReviewRes = await fetch(`${BACKEND_URL}/api/reviews`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Cookie": sessionCookie
+    },
+    body: JSON.stringify({ rating: 5, review: prodReviewText, feature: "API Gateway" })
+  });
+  assert(prodAuthReviewRes.status === 201, `Review submission returned status 201 (got ${prodAuthReviewRes.status})`);
+  const prodAuthReviewData = await prodAuthReviewRes.json();
+  assert(prodAuthReviewData.success === true, "Review submission success is true");
+  assert(prodAuthReviewData.review !== undefined, "Review payload returned");
+  const liveReviewId = prodAuthReviewData.review.id;
+  assert(prodAuthReviewData.review.name === testName, `Reviewer name matches profile ('${testName}')`);
+  assert(prodAuthReviewData.review.email === undefined, "Review response contains ZERO user emails");
+  assert(!JSON.stringify(prodAuthReviewData).includes(testEmail), "Response JSON has zero email leakage");
+  console.log(`    Live Review Created: ID=${liveReviewId}, Author=${prodAuthReviewData.review.name}, Rating=5★`);
+
+  console.log("\n[19] Verifying Review in Public Production Feed (/api/reviews)...");
+  const prodUpdatedGetRes = await fetch(`${BACKEND_URL}/api/reviews?page=1&limit=10`);
+  const prodUpdatedGetData = await prodUpdatedGetRes.json();
+  const foundProdReview = prodUpdatedGetData.reviews.find(r => r.id === liveReviewId);
+  assert(foundProdReview !== undefined, "Submitted review appears in live public feed");
+  assert(foundProdReview.name === testName, "Public review shows developer name");
+  assert(foundProdReview.email === undefined, "Public review hides email address");
+  assert(!JSON.stringify(prodUpdatedGetData).includes(testEmail), "Zero email addresses in public reviews endpoint");
+
+  // 9. Clean up production test account and review
+  console.log("\n[20] Cleaning up test user, keys, and review from Supabase...");
   const { database } = await import("../src/db.js");
   const db = database();
-  await db.query("DELETE FROM api_keys WHERE user_id = $1", [signupData.user.id]);
-  await db.query("DELETE FROM users WHERE id = $1", [signupData.user.id]);
+  if (liveReviewId) {
+    await db.query("DELETE FROM public.reviews WHERE id = $1", [liveReviewId]);
+  }
+  await db.query("DELETE FROM public.api_keys WHERE user_id = $1", [signupData.user.id]);
+  await db.query("DELETE FROM public.users WHERE id = $1", [signupData.user.id]);
   console.log("    Production test data cleaned up successfully.");
   await db.end();
 
