@@ -13,6 +13,9 @@ async function runMigrations() {
     console.log("Running 002_multi_api_keys.sql...");
     await db.query(await fs.readFile(new URL("../migrations/002_multi_api_keys.sql", import.meta.url), "utf8"));
 
+    console.log("Running 003_reviews.sql...");
+    await db.query(await fs.readFile(new URL("../migrations/003_reviews.sql", import.meta.url), "utf8"));
+
     console.log("✅ All database migrations completed successfully.");
   } finally {
     await db.end();

@@ -184,6 +184,37 @@ CREATE POLICY "service_role_all_request_history" ON public.request_history FOR A
 DROP POLICY IF EXISTS "service_role_all_gateway_usage" ON public.gateway_usage;
 CREATE POLICY "service_role_all_gateway_usage" ON public.gateway_usage FOR ALL TO service_role USING (true) WITH CHECK (true);
 
+-- 11. REVIEWS TABLE (Public user reviews & ratings)
+CREATE TABLE IF NOT EXISTS public.reviews (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+  review TEXT NOT NULL,
+  feature TEXT NOT NULL DEFAULT 'Overall APIHub',
+  status TEXT NOT NULL DEFAULT 'approved',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS reviews_created_at_idx ON public.reviews(created_at DESC);
+CREATE INDEX IF NOT EXISTS reviews_user_id_idx ON public.reviews(user_id);
+CREATE INDEX IF NOT EXISTS reviews_rating_idx ON public.reviews(rating DESC);
+CREATE INDEX IF NOT EXISTS reviews_status_idx ON public.reviews(status);
+
+DROP TRIGGER IF EXISTS trg_reviews_updated_at ON public.reviews;
+CREATE TRIGGER trg_reviews_updated_at
+  BEFORE UPDATE ON public.reviews
+  FOR EACH ROW EXECUTE FUNCTION public.update_timestamp();
+
+ALTER TABLE public.reviews ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "service_role_all_reviews" ON public.reviews;
+CREATE POLICY "service_role_all_reviews" ON public.reviews FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public_read_approved_reviews" ON public.reviews;
+CREATE POLICY "public_read_approved_reviews" ON public.reviews FOR SELECT USING (status = 'approved');
+
 -- Done! Verification query:
 SELECT table_name
 FROM information_schema.tables

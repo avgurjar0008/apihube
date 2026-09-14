@@ -146,7 +146,7 @@ async function runFinalUpgradeVerification() {
       { cat: "8. Movies & Entertainment", slug: "tvmaze", path: "/shows/1", validator: d => d.id === 1 && d.name !== undefined },
       { cat: "9. GitHub & Developer Tools", slug: "github", path: "/users/octocat", validator: d => d.login === "octocat" },
       { cat: "10. E-commerce & Products", slug: "dummyjson", path: "/products/1", validator: d => d.id === 1 && d.title !== undefined },
-      { cat: "11. Education & Public Knowledge", slug: "poetrydb", path: "/title/Ozymandias", validator: d => Array.isArray(d) && d[0]?.author !== undefined },
+      { cat: "11. Education & Public Knowledge", slug: "datamuse", path: "/words?rel_syn=fast", validator: d => Array.isArray(d) && d.length > 0 },
       { cat: "12. Government & Public Data", slug: "us-treasury", path: "/avg_interest_rates?page[size]=1", validator: d => Array.isArray(d.data) && d.data.length > 0 },
       { cat: "14. Crypto & Blockchain", slug: "coinpaprika", path: "/coins", validator: d => Array.isArray(d) && d.length > 0 && d[0]?.name === "Bitcoin" },
       { cat: "15. Travel, Transport & Places", slug: "zippopotam", path: "/us/90210", validator: d => d["post code"] === "90210" },

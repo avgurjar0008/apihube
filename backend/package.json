@@ -10,7 +10,8 @@
     "test:db": "node scripts/verify-db.js",
     "test:flow": "node scripts/test-developer-flow.js",
     "test:audit": "node scripts/test-full-system-audit.js",
-    "test:multi-keys": "node scripts/test-multi-api-keys.js"
+    "test:multi-keys": "node scripts/test-multi-api-keys.js",
+    "test:reviews": "node scripts/test-reviews.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

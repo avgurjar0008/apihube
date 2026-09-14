@@ -44,7 +44,8 @@ async function verifyDatabase() {
       "user_endpoints",
       "saved_requests",
       "request_history",
-      "gateway_usage"
+      "gateway_usage",
+      "reviews"
     ];
 
     const tablesResult = await pool.query(`

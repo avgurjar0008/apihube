@@ -12,6 +12,7 @@ import libraryRouter from "./routes/library.routes.js";
 import gatewayRouter from "./routes/gateway.routes.js";
 import savedRequestsRouter from "./routes/saved-requests.routes.js";
 import aiRouter from "./routes/ai.routes.js";
+import reviewsRouter from "./routes/reviews.routes.js";
 import { requireDatabase } from "./db.js";
 
 const app = express();
@@ -51,6 +52,7 @@ app.use("/api/my-apis", requireDatabase, userApisRouter);
 app.use("/api/my-apis", requireDatabase, userEndpointsRouter);
 app.use("/api/saved-requests", requireDatabase, savedRequestsRouter);
 app.use("/api/gateway", requireDatabase, gatewayRouter);
+app.use("/api/reviews", requireDatabase, reviewsRouter);
 app.use("/api/v1", requireDatabase, libraryRouter);
 
 app.use((req, res) => res.status(404).json({ success: false, message: "Route not found" }));

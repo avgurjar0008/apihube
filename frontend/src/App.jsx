@@ -59,7 +59,7 @@ function parseHeaders(text) {
 
 function Icon({ name }) {
   const icons = {
-    home: "⌂", api: "◈", tester: "⌁", docs: "▤", explore: "◎", ai: "✦", learn: "◉", history: "↺", collection: "▦", settings: "⚙", plus: "+", arrow: "→", menu: "☰"
+    home: "⌂", api: "◈", tester: "⌁", docs: "▤", explore: "◎", ai: "✦", learn: "◉", history: "↺", collection: "▦", settings: "⚙", plus: "+", arrow: "→", menu: "☰", star: "★"
   };
   return <span className="iconGlyph" aria-hidden="true">{icons[name] || "•"}</span>;
 }
@@ -365,6 +365,8 @@ export default function App() {
   const [userApis, setUserApis] = useState(() => readLocal("apihub_apis"));
   const [userEndpoints, setUserEndpoints] = useState(() => readLocal("apihub_endpoints"));
   const [toast, setToast] = useState(null);
+  const [reviewModalOpen, setReviewModalOpen] = useState(false);
+  const [reviewRefreshKey, setReviewRefreshKey] = useState(0);
 
   function showToast(msg) {
     setToast(msg);
@@ -784,7 +786,7 @@ export default function App() {
 
     {(() => {
       switch (page) {
-        case "Home": return <Home navigate={navigate} apiCatalog={apiCatalog} onLearnMore={openAiWithPrompt}/>;
+        case "Home": return <Home navigate={navigate} apiCatalog={apiCatalog} onLearnMore={openAiWithPrompt} onOpenReview={() => setReviewModalOpen(true)} reviewRefreshKey={reviewRefreshKey} />;
         case "Tester": return <Tester {...{method,setMethod,url,setUrl,headers,setHeaders,body,setBody,tab,setTab,response,error,loading,sendRequest,responseText,params,setParams,history,navigate,setAiOpen,saveRequest,onLearnMore:openAiWithPrompt}}/>;
         case "APIs": return <Apis navigate={navigate} catalog={apiCatalog} myApis={userApis} currentUser={currentUser} onDeleteApi={handleDeleteApi} showToast={showToast} copyToClipboard={copyToClipboard} onLearnMore={openAiWithPrompt} />;
         case "API Details": return <APIDetails navigate={navigate} apiId={selectedApiId} catalogId={selectedCatalogId} currentUser={currentUser} userApis={userApis} onDeleteApi={handleDeleteApi} showToast={showToast} copyToClipboard={copyToClipboard} onLearnMore={openAiWithPrompt} />;
@@ -817,17 +819,444 @@ export default function App() {
 
     {toast && <div className="toastNotification"><span>✓</span> {toast}</div>}
 
-    <Footer navigate={navigate} currentUser={currentUser} signOut={signOut} />
+    <Footer navigate={navigate} currentUser={currentUser} signOut={signOut} onOpenReview={() => setReviewModalOpen(true)} />
+
+    <ReviewModal
+      isOpen={reviewModalOpen}
+      onClose={() => setReviewModalOpen(false)}
+      currentUser={currentUser}
+      navigate={navigate}
+      onReviewSubmitted={() => {
+        setReviewRefreshKey(k => k + 1);
+        showToast("Review submitted successfully!");
+      }}
+      showToast={showToast}
+    />
   </div>;
 }
 
-function Home({navigate, apiCatalog, onLearnMore}) {
+function renderStars(rating, max = 5) {
+  const stars = [];
+  for (let i = 1; i <= max; i++) {
+    stars.push(
+      <span key={i} style={{ color: i <= rating ? "#ffc233" : "#324359" }}>
+        ★
+      </span>
+    );
+  }
+  return stars;
+}
+
+function ReviewModal({ isOpen, onClose, currentUser, navigate, onReviewSubmitted, showToast }) {
+  const [rating, setRating] = useState(5);
+  const [hoverRating, setHoverRating] = useState(0);
+  const [review, setReview] = useState("");
+  const [feature, setFeature] = useState("Overall APIHub");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState(false);
+
+  if (!isOpen) return null;
+
+  const currentActiveRating = hoverRating || rating;
+  const ratingLabels = {
+    5: "5 - Exceptional",
+    4: "4 - Very Good",
+    3: "3 - Good",
+    2: "2 - Fair",
+    1: "1 - Needs Improvement"
+  };
+
+  const authorDisplayName = currentUser?.name
+    ? currentUser.name
+    : (currentUser?.email ? currentUser.email.split("@")[0] : "Developer");
+
+  async function handleSubmit(e) {
+    e?.preventDefault();
+    const cleanText = review.trim();
+    if (cleanText.length < 10) {
+      setError("Review must be at least 10 characters.");
+      return;
+    }
+    if (cleanText.length > 1000) {
+      setError("Review cannot exceed 1000 characters.");
+      return;
+    }
+
+    setSubmitting(true);
+    setError("");
+
+    try {
+      const res = await authFetch(`${API_BASE_URL}/api/reviews`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating, review: cleanText, feature })
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Unable to submit your review. Please try again.");
+      }
+      setSuccess(true);
+      if (onReviewSubmitted) onReviewSubmitted();
+      setTimeout(() => {
+        setSuccess(false);
+        setReview("");
+        setRating(5);
+        onClose();
+      }, 1400);
+    } catch (err) {
+      setError(err.message || "Unable to submit your review. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="modalOverlay" onClick={e => { if (e.target === e.currentTarget && !submitting) onClose(); }}>
+      <div className="reviewModalCard" role="dialog" aria-modal="true" aria-labelledby="modalReviewTitle">
+        <button className="modalClose" onClick={onClose} aria-label="Close review dialog" disabled={submitting}>×</button>
+
+        {!currentUser ? (
+          <div className="reviewAuthNotice">
+            <span className="authNoticeBadge">✦ Verified Developer Reviews</span>
+            <h2 id="modalReviewTitle">Sign in to share your review</h2>
+            <p>
+              To keep APIHub reviews genuine, authenticated accounts are required to submit ratings and feedback.
+            </p>
+            <div className="reviewAuthBtns">
+              <button
+                className="primaryBtn"
+                onClick={() => {
+                  onClose();
+                  navigate("Sign In");
+                }}
+              >
+                Sign In
+              </button>
+              <button
+                className="secondaryBtn"
+                onClick={() => {
+                  onClose();
+                  navigate("Sign Up");
+                }}
+              >
+                Create Free Account <Icon name="arrow" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <h2 id="modalReviewTitle">Write a Developer Review</h2>
+            <p className="reviewModalSubtitle">
+              Share your experience with APIHub to help other engineers evaluate and build faster.
+            </p>
+
+            {success ? (
+              <div className="successBox" style={{ margin: "20px 0", textAlign: "center", padding: "20px" }}>
+                <strong>✓ Review submitted successfully!</strong>
+                <p style={{ margin: "8px 0 0", color: "#8be4c6", fontSize: "11px" }}>
+                  Thank you for contributing to the APIHub developer community.
+                </p>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit}>
+                <div className="reviewFormRow">
+                  <label id="ratingLabel">Your Rating</label>
+                  <div
+                    className="interactiveStarsRow"
+                    role="radiogroup"
+                    aria-labelledby="ratingLabel"
+                  >
+                    <div className="starPicker">
+                      {[1, 2, 3, 4, 5].map(starNum => (
+                        <button
+                          key={starNum}
+                          type="button"
+                          role="radio"
+                          aria-checked={rating === starNum}
+                          aria-label={`${starNum} star${starNum > 1 ? "s" : ""}`}
+                          className={`starBtn ${starNum <= currentActiveRating ? "active" : ""}`}
+                          onClick={() => setRating(starNum)}
+                          onMouseEnter={() => setHoverRating(starNum)}
+                          onMouseLeave={() => setHoverRating(0)}
+                          onKeyDown={e => {
+                            if (e.key === "ArrowRight" && starNum < 5) setRating(starNum + 1);
+                            if (e.key === "ArrowLeft" && starNum > 1) setRating(starNum - 1);
+                          }}
+                        >
+                          ★
+                        </button>
+                      ))}
+                    </div>
+                    <span className="ratingDescriptor">
+                      {ratingLabels[currentActiveRating] || `${currentActiveRating} Stars`}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="reviewFormRow">
+                  <label htmlFor="reviewFeatureSelect">Feature / Workflow Area</label>
+                  <select
+                    id="reviewFeatureSelect"
+                    value={feature}
+                    onChange={e => setFeature(e.target.value)}
+                  >
+                    <option value="Overall APIHub">Overall APIHub</option>
+                    <option value="API Gateway">API Gateway</option>
+                    <option value="API Tester">API Tester</option>
+                    <option value="API Documentation">API Documentation</option>
+                    <option value="Learn">Learning Center</option>
+                    <option value="AI Assistant">AI Assistant</option>
+                    <option value="API Marketplace">API Marketplace</option>
+                    <option value="API Key Management">API Key Management</option>
+                  </select>
+                </div>
+
+                <div className="reviewFormRow">
+                  <label htmlFor="reviewTextarea">Your Review</label>
+                  <textarea
+                    id="reviewTextarea"
+                    value={review}
+                    onChange={e => {
+                      setReview(e.target.value);
+                      if (error) setError("");
+                    }}
+                    placeholder="What did you build? How did APIHub help with latency, testing, gateway keys, or API documentation?"
+                    maxLength={1000}
+                  />
+                  <div className={`charCountRow ${review.trim().length >= 10 ? "valid" : (review.length > 0 ? "invalid" : "")}`}>
+                    <span>Minimum 10 characters</span>
+                    <span>{review.length} / 1000</span>
+                  </div>
+                </div>
+
+                <div className="identityCallout">
+                  Posting publicly as: <strong>{authorDisplayName}</strong> · Verified Developer
+                  <br />
+                  <span style={{ color: "#5d7088", fontSize: "8.5px" }}>
+                    Your private email address is never stored in reviews or shown publicly.
+                  </span>
+                </div>
+
+                {error && <div className="errorBox" style={{ marginBottom: "16px" }}>{error}</div>}
+
+                <div className="reviewModalActions">
+                  <button
+                    type="button"
+                    className="secondaryBtn"
+                    onClick={onClose}
+                    disabled={submitting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="primaryBtn"
+                    disabled={submitting || review.trim().length < 10}
+                  >
+                    {submitting ? "Submitting..." : "Submit Review"} <Icon name="arrow" />
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ReviewsSection({ onOpenReview, refreshKey }) {
+  const [reviews, setReviews] = useState([]);
+  const [summary, setSummary] = useState({
+    averageRating: 0,
+    totalReviews: 0,
+    distribution: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+    percentages: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+  });
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    setLoading(true);
+
+    fetch(`${API_BASE_URL}/api/reviews?page=1&limit=6&sort=newest`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (!isMounted) return;
+        if (data?.success) {
+          setReviews(data.reviews || []);
+          if (data.summary) setSummary(data.summary);
+          setHasMore(Boolean(data.pagination?.hasMore));
+          setPage(1);
+        }
+      })
+      .catch(() => {
+        // Graceful error fallback - do not crash page
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => { isMounted = false; };
+  }, [refreshKey]);
+
+  async function handleLoadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const nextPage = page + 1;
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/reviews?page=${nextPage}&limit=6&sort=newest`);
+      const data = await res.json();
+      if (data?.success && Array.isArray(data.reviews)) {
+        setReviews(prev => [...prev, ...data.reviews]);
+        setPage(nextPage);
+        setHasMore(Boolean(data.pagination?.hasMore));
+      }
+    } catch {
+      // Graceful fallback
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  const scoreDisplay = summary.averageRating > 0 ? summary.averageRating.toFixed(1) : "5.0";
+
+  return (
+    <section className="reviewsSection" aria-label="Developer Reviews & Ratings">
+      <div className="reviewsSectionHeader">
+        <div>
+          <div className="eyebrow">DEVELOPER REVIEWS</div>
+          <h2>What developers say about APIHub</h2>
+          <p>
+            Real feedback from developers using APIHub for API discovery, automated testing, gateway key management, and documentation.
+          </p>
+        </div>
+        <button className="primaryBtn" onClick={onOpenReview}>
+          <Icon name="star" /> Write a Review
+        </button>
+      </div>
+
+      <div className="ratingSummaryCard">
+        <div className="ratingScoreCol">
+          <div className="bigScoreNum">{scoreDisplay}</div>
+          <div className="starsDisplay">{renderStars(Math.round(summary.averageRating || 5))}</div>
+          <div className="ratingCountSub">
+            {summary.totalReviews > 0
+              ? `Based on ${summary.totalReviews} developer review${summary.totalReviews === 1 ? "" : "s"}`
+              : "No reviews yet — be the first!"}
+          </div>
+        </div>
+
+        <div className="ratingBarsCol">
+          {[5, 4, 3, 2, 1].map(starNum => (
+            <div key={starNum} className="ratingBarRow">
+              <span>{starNum} ★</span>
+              <div className="ratingBarTrack">
+                <div
+                  className="ratingBarFill"
+                  style={{ width: `${summary.percentages?.[starNum] || 0}%` }}
+                />
+              </div>
+              <span className="ratingBarCount">({summary.distribution?.[starNum] || 0})</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="ratingCtaCol">
+          <p>Help other developers build better by sharing your experience.</p>
+          <button className="secondaryBtn" onClick={onOpenReview} style={{ width: "100%", justifyContent: "center" }}>
+            Share Your Experience
+          </button>
+        </div>
+      </div>
+
+      {loading ? (
+        <div style={{ textAlign: "center", padding: "40px", color: "#8293aa", fontSize: "11px" }}>
+          Loading reviews...
+        </div>
+      ) : reviews.length === 0 ? (
+        <div className="emptyReviewsCard">
+          <span className="emptyReviewsIcon">★</span>
+          <h3>No reviews yet</h3>
+          <p>Be the first developer to share your experience with APIHub.</p>
+          <button className="primaryBtn" onClick={onOpenReview}>
+            <Icon name="star" /> Write the First Review
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="reviewsGrid">
+            {reviews.map(item => {
+              const initials = (item.name || "D")
+                .split(" ")
+                .map(s => s[0])
+                .slice(0, 2)
+                .join("")
+                .toUpperCase();
+
+              const formattedDate = item.created_at
+                ? new Date(item.created_at).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric"
+                  })
+                : "Recently";
+
+              return (
+                <article key={item.id} className="reviewCard">
+                  <div>
+                    <div className="reviewCardTop">
+                      <div className="starsDisplay">{renderStars(item.rating)}</div>
+                      <span className="reviewFeatureBadge">{item.feature || "Overall APIHub"}</span>
+                    </div>
+                    <p className="reviewBodyText">"{item.review}"</p>
+                  </div>
+
+                  <div className="reviewerMeta">
+                    <div className="reviewerAvatar">{initials}</div>
+                    <div className="reviewerDetails">
+                      <div className="reviewerNameRow">
+                        <strong>{item.name}</strong>
+                        <span className="verifiedDevBadge">✓ Verified Dev</span>
+                      </div>
+                      <span className="reviewDate">{formattedDate}</span>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+
+          {hasMore && (
+            <div className="loadMoreReviewsWrap">
+              <button
+                className="loadMoreBtn"
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+              >
+                {loadingMore ? "Loading..." : "Load More Reviews ↓"}
+              </button>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function Home({navigate, apiCatalog, onLearnMore, onOpenReview, reviewRefreshKey}) {
   return <main className="homePage">
     <section className="heroHome"><div className="heroCopy"><div className="eyebrow">THE API WORKSPACE FOR BUILDERS</div><h1>Build, explore & <span>test APIs</span> in one place.</h1><p>Discover APIs, test endpoints, create your own API documentation and use AI to understand what is happening behind every request.</p><div className="heroButtons"><button className="primaryBtn" onClick={() => navigate("Create API")}>Start Testing <Icon name="arrow"/></button><button className="secondaryBtn" onClick={() => navigate("Explore")}>Explore APIs</button></div><div className="trustLine"><span>● No setup required</span><span>● Developer focused</span><span>● Student friendly</span></div></div><div className="heroVisual"><div className="orb orbOne"/><div className="orb orbTwo"/><div className="miniTerminal"><div className="terminalTop"><span/> <span/> <span/><b>API Request</b></div><div className="requestLine"><em>GET</em><code>/api/users?limit=5</code><strong>200 OK</strong></div><div className="codeLine">{`{ "users": [ ... ] }`}</div><div className="terminalStats"><span>124 ms</span><span>1.8 KB</span><span>JSON</span></div></div></div></section>
     <section className="featureGrid"><Feature icon="api" title="API Provider" text="Create, manage and publish APIs with endpoints, responses, authentication and documentation."/><Feature icon="tester" title="API Testing" text="Build requests with params, headers and bodies, then inspect status, timing and response data."/><Feature icon="docs" title="Documentation" text="Turn every endpoint into clear developer documentation with examples and a Try API flow."/><Feature icon="explore" title="API Explorer" text="Discover useful APIs by category and open them directly in the testing workspace."/></section>
     <section className="workflowSection"><div><div className="eyebrow">HOW APIHUB CONNECTS THE WORKFLOW</div><h2>From API discovery to a working request.</h2><p>APIHub keeps the core developer workflow together. Explore an API, understand its docs, test it, then use the response in your project.</p></div><div className="workflow"><Step n="01" title="Discover" text="Find an API or create your own."/><Step n="02" title="Understand" text="Read endpoints, parameters and examples."/><Step n="03" title="Test" text="Send requests and inspect responses."/><Step n="04" title="Build" text="Take the API into your application."/></div></section>
     <section className="showcase"><div><div className="eyebrow">POWERFUL BY DESIGN</div><h2>Your API workbench, without the clutter.</h2><p>Keep requests, collections, history, documentation and AI guidance close to the work you are doing.</p><button className="textBtn" onClick={() => navigate("Tester")}>Open API Tester <Icon name="arrow"/></button></div><div className="darkCard"><div className="darkCardHeader"><span>REQUEST</span><span className="successBadge">200 OK</span></div><div className="darkUrl"><b>GET</b> https://api.example.com/users</div><div className="darkTabs"><span className="selected">Params</span><span>Headers</span><span>Body</span><span>Auth</span></div><div className="darkRows"><div><span>userId</span><b>1</b></div><div><span>limit</span><b>5</b></div></div></div></section>
     <section className="catalogPreview"><div className="sectionHead"><div><div className="eyebrow">EXPLORE</div><h2>Start with an API.</h2></div><button className="textBtn" onClick={() => navigate("Explore")}>View all <Icon name="arrow"/></button></div><div className="catalogGrid">{apiCatalog.map(api => <ApiCard key={api.name} api={api} navigate={navigate} onLearnMore={onLearnMore}/>)}</div></section>
+    <ReviewsSection onOpenReview={onOpenReview} refreshKey={reviewRefreshKey} />
   </main>;
 }
 
@@ -3635,7 +4064,7 @@ function Dashboard({ navigate, user, showToast, copyToClipboard, onLearnMore }) 
     </main>
   );
 }
-function Footer({ navigate, currentUser, signOut }) {
+function Footer({ navigate, currentUser, signOut, onOpenReview }) {
   return (
     <footer className="globalFooter">
       <div className="footerInner">
@@ -3667,6 +4096,7 @@ function Footer({ navigate, currentUser, signOut }) {
               <li><button onClick={() => navigate("Documentation")}>Documentation</button></li>
               <li><button onClick={() => navigate("Explore")}>Explore Marketplace</button></li>
               <li><button onClick={() => navigate("Learn")}>Learning Center</button></li>
+              <li><button onClick={onOpenReview}>Write a Review</button></li>
             </ul>
           </div>
 
@@ -3687,6 +4117,7 @@ function Footer({ navigate, currentUser, signOut }) {
                   <li><button onClick={() => navigate("Documentation")}>Gateway Auth (X-API-Key)</button></li>
                 </>
               )}
+              <li><button onClick={onOpenReview}>Give Feedback</button></li>
               <li><button onClick={() => navigate("Privacy")}>Privacy & Security</button></li>
             </ul>
           </div>
